@@ -9,14 +9,22 @@ actor CodexProvider {
     private let settingsURL = URL(string: "https://platform.openai.com/settings/organization/limits")!
 
     struct AuthFile: Codable {
-        var accessToken: String?
-        var refreshToken: String?
-        var expiresAt: Double?
+        var tokens: Tokens?
+        var lastRefresh: Double?
 
         enum CodingKeys: String, CodingKey {
-            case accessToken = "access_token"
-            case refreshToken = "refresh_token"
-            case expiresAt = "expires_at"
+            case tokens
+            case lastRefresh = "last_refresh"
+        }
+
+        struct Tokens: Codable {
+            var accessToken: String?
+            var refreshToken: String?
+
+            enum CodingKeys: String, CodingKey {
+                case accessToken = "access_token"
+                case refreshToken = "refresh_token"
+            }
         }
     }
 
@@ -40,7 +48,7 @@ actor CodexProvider {
         // Read auth file
         guard let authData = FileManager.default.contents(atPath: authPath),
               var auth = try? JSONDecoder().decode(AuthFile.self, from: authData),
-              var accessToken = auth.accessToken else {
+              var accessToken = auth.tokens?.accessToken else {
             return Provider(
                 id: "codex",
                 name: "Codex",
@@ -51,11 +59,11 @@ actor CodexProvider {
         }
 
         // Refresh if needed
-        if needsRefresh(auth.expiresAt), let refreshToken = auth.refreshToken {
+        if needsRefresh(auth.lastRefresh), let refreshToken = auth.tokens?.refreshToken {
             if let refreshed = try? await refreshTokenRequest(refreshToken) {
                 accessToken = refreshed.accessToken
-                auth.accessToken = refreshed.accessToken
-                auth.expiresAt = refreshed.expiresAt
+                auth.tokens?.accessToken = refreshed.accessToken
+                auth.lastRefresh = Date().timeIntervalSince1970
                 saveAuth(auth)
             }
         }
@@ -124,11 +132,11 @@ actor CodexProvider {
         )
     }
 
-    private func needsRefresh(_ expiresAt: Double?) -> Bool {
-        guard let expiresAt = expiresAt else { return true }
+    private func needsRefresh(_ lastRefresh: Double?) -> Bool {
+        guard let lastRefresh = lastRefresh else { return true }
         let now = Date().timeIntervalSince1970
-        let bufferSeconds: Double = 5 * 60 // 5 minutes
-        return now + bufferSeconds >= expiresAt
+        let tokenLifetimeSeconds: Double = 55 * 60 // Assume 1-hour tokens, refresh at 55 min
+        return now - lastRefresh >= tokenLifetimeSeconds
     }
 
     private func refreshTokenRequest(_ refreshToken: String) async throws -> (accessToken: String, expiresAt: Double)? {

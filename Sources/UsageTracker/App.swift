@@ -28,6 +28,8 @@ class AppState: ObservableObject {
     private let claudeProvider = ClaudeProvider()
     private let cursorProvider = CursorProvider()
     private let codexProvider = CodexProvider()
+    private let extensionServer = ExtensionServer()
+    private var chatgptProvider: ExtensionProvider?
     private var refreshTimer: Timer?
 
     var maxPercentage: Double {
@@ -37,6 +39,21 @@ class AppState: ObservableObject {
     init() {
         loadConfig()
         setupRefreshTimer()
+        setupExtensionServer()
+    }
+
+    private func setupExtensionServer() {
+        chatgptProvider = ExtensionProvider(
+            server: extensionServer,
+            id: "chatgpt",
+            name: "ChatGPT",
+            icon: "bubble.left.fill",
+            dashboardURL: URL(string: "https://chatgpt.com/")!
+        )
+
+        Task {
+            try? await extensionServer.start()
+        }
     }
 
     func refresh() async {
@@ -51,6 +68,7 @@ class AppState: ObservableObject {
         let claude = try? await claudeResult
         let cursor = try? await cursorResult
         let codex = try? await codexResult
+        let chatgpt = await chatgptProvider?.fetchUsage()
 
         var newProviders: [Provider] = []
 
@@ -64,6 +82,10 @@ class AppState: ObservableObject {
 
         if let codex = codex {
             newProviders.append(codex)
+        }
+
+        if let chatgpt = chatgpt {
+            newProviders.append(chatgpt)
         }
 
         providers = newProviders

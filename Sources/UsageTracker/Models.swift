@@ -12,12 +12,22 @@ struct UsageItem: Identifiable, Equatable {
         return (current / limit) * 100
     }
 
-    var color: Color {
+    var gradientColors: (start: Color, end: Color) {
         switch percentage {
-        case 0..<50: return .green
-        case 50..<80: return .yellow
-        default: return .red
+        case 0..<50:
+            return (Color(red: 0.204, green: 0.780, blue: 0.349),  // #34C759
+                    Color(red: 0.188, green: 0.820, blue: 0.345))  // #30D158
+        case 50..<80:
+            return (Color(red: 1.0, green: 0.624, blue: 0.039),    // #FF9F0A
+                    Color(red: 1.0, green: 0.702, blue: 0.251))    // #FFB340
+        default:
+            return (Color(red: 1.0, green: 0.231, blue: 0.188),    // #FF3B30
+                    Color(red: 1.0, green: 0.412, blue: 0.380))    // #FF6961
         }
+    }
+
+    var color: Color {
+        gradientColors.start
     }
 }
 

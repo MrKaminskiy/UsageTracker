@@ -1,5 +1,23 @@
 import SwiftUI
 
+struct IconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12))
+            .foregroundColor(.secondary)
+            .frame(width: 24, height: 24)
+            .background(
+                Circle()
+                    .fill(configuration.isPressed ? Color.primary.opacity(0.12) : Color.clear)
+            )
+            .contentShape(Circle())
+    }
+}
+
+extension ButtonStyle where Self == IconButtonStyle {
+    static var icon: IconButtonStyle { IconButtonStyle() }
+}
+
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
 
@@ -62,9 +80,14 @@ struct MenuBarView: View {
                     await appState.refresh()
                 }
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                Image(systemName: "arrow.clockwise")
+                    .rotationEffect(.degrees(appState.isLoading ? 360 : 0))
+                    .animation(
+                        appState.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
+                        value: appState.isLoading
+                    )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.icon)
             .disabled(appState.isLoading)
 
             Spacer()
@@ -78,20 +101,10 @@ struct MenuBarView: View {
             Spacer()
 
             SettingsLink {
-                Label("Settings", systemImage: "gear")
+                Image(systemName: "gear")
             }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Label("Quit", systemImage: "xmark")
-            }
-            .buttonStyle(.plain)
+            .buttonStyle(.icon)
         }
-        .font(.system(size: 11))
     }
 
 }

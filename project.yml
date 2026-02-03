@@ -1,0 +1,43 @@
+name: UsageTracker
+options:
+  bundleIdPrefix: com.usagetracker
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+settings:
+  SWIFT_VERSION: "5.9"
+  MACOSX_DEPLOYMENT_TARGET: "14.0"
+targets:
+  UsageTracker:
+    type: application
+    platform: macOS
+    sources:
+      - UsageTracker
+    settings:
+      INFOPLIST_FILE: UsageTracker/Info.plist
+      PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app
+      PRODUCT_NAME: UsageTracker
+      CODE_SIGN_STYLE: Automatic
+      ENABLE_HARDENED_RUNTIME: YES
+      LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+    info:
+      path: UsageTracker/Info.plist
+      properties:
+        CFBundleName: UsageTracker
+        CFBundleDisplayName: UsageTracker
+        CFBundleIdentifier: com.usagetracker.app
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.0"
+        LSUIElement: true
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+  UsageTrackerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - UsageTrackerTests
+    dependencies:
+      - target: UsageTracker
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.tests

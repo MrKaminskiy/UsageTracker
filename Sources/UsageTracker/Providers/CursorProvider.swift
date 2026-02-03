@@ -12,12 +12,13 @@ actor CursorProvider {
         var enabled: Bool?
         var planUsage: PlanUsage?
         var spendLimitUsage: SpendLimitUsage?
-        var billingCycleEnd: Double?
+        var billingCycleEnd: String?
 
         struct PlanUsage: Codable {
             var totalSpend: Double?
             var limit: Double?
             var bonusSpend: Double?
+            var totalPercentUsed: Double?
         }
 
         struct SpendLimitUsage: Codable {
@@ -110,8 +111,15 @@ actor CursorProvider {
 
         var items: [UsageItem] = []
 
-        // Plan usage (in dollars)
-        if let totalSpend = planUsage.totalSpend, let limit = planUsage.limit, limit > 0 {
+        // Plan usage - use totalPercentUsed if available
+        if let percentUsed = planUsage.totalPercentUsed {
+            items.append(UsageItem(
+                label: "Plan",
+                current: percentUsed,
+                limit: 100,
+                resetLabel: formatResetTime(usage.billingCycleEnd)
+            ))
+        } else if let totalSpend = planUsage.totalSpend, let limit = planUsage.limit, limit > 0 {
             let percentage = (totalSpend / limit) * 100
             items.append(UsageItem(
                 label: "Plan",
@@ -119,22 +127,6 @@ actor CursorProvider {
                 limit: 100,
                 resetLabel: formatResetTime(usage.billingCycleEnd)
             ))
-        }
-
-        // On-demand usage
-        if let spendLimit = usage.spendLimitUsage {
-            let limit = spendLimit.individualLimit ?? spendLimit.pooledLimit ?? 0
-            let remaining = spendLimit.individualRemaining ?? spendLimit.pooledRemaining ?? 0
-            if limit > 0 {
-                let used = limit - remaining
-                let percentage = (used / limit) * 100
-                items.append(UsageItem(
-                    label: "On-demand",
-                    current: percentage,
-                    limit: 100,
-                    resetLabel: nil
-                ))
-            }
         }
 
         return Provider(
@@ -249,8 +241,9 @@ actor CursorProvider {
         return refreshResponse.access_token
     }
 
-    private func formatResetTime(_ timestampMs: Double?) -> String? {
-        guard let timestampMs = timestampMs else { return nil }
+    private func formatResetTime(_ timestampMsString: String?) -> String? {
+        guard let timestampMsString = timestampMsString,
+              let timestampMs = Double(timestampMsString) else { return nil }
 
         let resetDate = Date(timeIntervalSince1970: timestampMs / 1000)
         let diff = resetDate.timeIntervalSinceNow

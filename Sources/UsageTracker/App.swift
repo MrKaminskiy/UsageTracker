@@ -1,20 +1,46 @@
 import SwiftUI
+import Combine
 
 @main
 struct UsageTrackerApp: App {
-    @StateObject private var appState = AppState()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarView(appState: appState)
-        } label: {
-            MenuBarIcon(percentage: appState.maxPercentage, isLoading: appState.isLoading)
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
-            SettingsView(appState: appState)
+            SettingsView(appState: appDelegate.appState)
         }
+    }
+}
+
+@MainActor
+class AppDelegate: NSObject, NSApplicationDelegate {
+    let appState = AppState()
+    private var statusBarController: StatusBarController!
+    private var cancellables = Set<AnyCancellable>()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        statusBarController = StatusBarController()
+        statusBarController.setup(with: MenuBarView(appState: appState))
+        statusBarController.updateIcon(percentage: appState.maxPercentage, isLoading: appState.isLoading)
+
+        // Observe changes to update icon
+        appState.$providers
+            .combineLatest(appState.$isLoading)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, isLoading in
+                guard let self = self else { return }
+                self.statusBarController.updateIcon(percentage: self.appState.maxPercentage, isLoading: isLoading)
+            }
+            .store(in: &cancellables)
+
+        // Initial refresh
+        Task {
+            await appState.refresh()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        statusBarController.cleanup()
     }
 }
 

@@ -20,11 +20,27 @@ actor CodexProvider {
         }
     }
 
+    struct UsageResponse: Codable {
+        var data: UsageData?
+
+        struct UsageData: Codable {
+            var hardLimitUsd: Double?
+            var softLimitUsd: Double?
+            var totalUsageUsd: Double?
+
+            enum CodingKeys: String, CodingKey {
+                case hardLimitUsd = "hard_limit_usd"
+                case softLimitUsd = "soft_limit_usd"
+                case totalUsageUsd = "total_usage_usd"
+            }
+        }
+    }
+
     func fetchUsage() async throws -> Provider {
         // Read auth file
         guard let authData = FileManager.default.contents(atPath: authPath),
-              let auth = try? JSONDecoder().decode(AuthFile.self, from: authData),
-              let _ = auth.accessToken else {
+              var auth = try? JSONDecoder().decode(AuthFile.self, from: authData),
+              var accessToken = auth.accessToken else {
             return Provider(
                 id: "codex",
                 name: "Codex",
@@ -34,13 +50,77 @@ actor CodexProvider {
             )
         }
 
-        // TODO: Implement token refresh and usage fetch
+        // Refresh if needed
+        if needsRefresh(auth.expiresAt), let refreshToken = auth.refreshToken {
+            if let refreshed = try? await refreshTokenRequest(refreshToken) {
+                accessToken = refreshed.accessToken
+                auth.accessToken = refreshed.accessToken
+                auth.expiresAt = refreshed.expiresAt
+                saveAuth(auth)
+            }
+        }
+
+        // Fetch usage
+        var request = URLRequest(url: usageURL)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return Provider(
+                id: "codex",
+                name: "Codex",
+                icon: "terminal.fill",
+                items: [],
+                status: .error("Invalid response")
+            )
+        }
+
+        if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+            return Provider(
+                id: "codex",
+                name: "Codex",
+                icon: "terminal.fill",
+                items: [],
+                status: .error("Token expired. Run `codex login`")
+            )
+        }
+
+        guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            return Provider(
+                id: "codex",
+                name: "Codex",
+                icon: "terminal.fill",
+                items: [],
+                status: .error("HTTP \(httpResponse.statusCode)")
+            )
+        }
+
+        let usage = try JSONDecoder().decode(UsageResponse.self, from: data)
+
+        var items: [UsageItem] = []
+
+        if let usageData = usage.data,
+           let total = usageData.totalUsageUsd,
+           let limit = usageData.hardLimitUsd ?? usageData.softLimitUsd,
+           limit > 0 {
+            let percentage = (total / limit) * 100
+            items.append(UsageItem(
+                label: "Usage",
+                current: percentage,
+                limit: 100,
+                resetLabel: nil
+            ))
+        }
+
         return Provider(
             id: "codex",
             name: "Codex",
             icon: "terminal.fill",
-            items: [],
-            status: .error("Not implemented")
+            items: items,
+            status: items.isEmpty ? .error("No usage data") : .loaded
         )
     }
 

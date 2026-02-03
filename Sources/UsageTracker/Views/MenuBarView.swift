@@ -51,10 +51,6 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach($appState.providers) { $provider in
                 ProviderRow(provider: $provider)
-
-                if provider.id != appState.providers.last?.id {
-                    Divider()
-                }
             }
         }
     }

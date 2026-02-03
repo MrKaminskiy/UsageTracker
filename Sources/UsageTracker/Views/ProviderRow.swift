@@ -82,15 +82,39 @@ struct UsageItemRow: View {
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.gray.opacity(0.2))
+                    // Track with inset shadow effect
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.primary.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.primary.opacity(0.04), lineWidth: 0.5)
+                        )
 
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(item.color)
+                    // Filled portion with gradient
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(
+                            LinearGradient(
+                                colors: [item.gradientColors.start, item.gradientColors.end],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .frame(width: geometry.size.width * min(item.percentage / 100, 1))
+                        .overlay(
+                            // Subtle top highlight
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.25), Color.white.opacity(0)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .frame(width: geometry.size.width * min(item.percentage / 100, 1))
+                        )
                 }
             }
-            .frame(height: 6)
+            .frame(height: 8)
 
             Text("\(Int(item.percentage))%")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))

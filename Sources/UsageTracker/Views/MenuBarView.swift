@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct IconButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12))
@@ -8,9 +10,15 @@ struct IconButtonStyle: ButtonStyle {
             .frame(width: 24, height: 24)
             .background(
                 Circle()
-                    .fill(configuration.isPressed ? Color.primary.opacity(0.12) : Color.clear)
+                    .fill(
+                        configuration.isPressed ? Color.primary.opacity(0.12) :
+                        isHovered ? Color.primary.opacity(0.08) : Color.clear
+                    )
             )
             .contentShape(Circle())
+            .onHover { hovering in
+                isHovered = hovering
+            }
     }
 }
 

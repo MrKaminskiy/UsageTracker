@@ -4,8 +4,10 @@ struct ProviderRow: View {
     @Binding var provider: Provider
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             providerHeader
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
 
             if case .notConnected(let url) = provider.status {
                 HStack {
@@ -17,13 +19,34 @@ struct ProviderRow: View {
                     .controlSize(.small)
                     Spacer()
                 }
-                .padding(.vertical, 4)
-            } else if provider.isExpanded {
-                ForEach(provider.items) { item in
-                    UsageItemRow(item: item)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            } else if provider.isExpanded && !provider.items.isEmpty {
+                // Inset content area
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(provider.items) { item in
+                        UsageItemRow(item: item)
+                    }
                 }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.03))
+                )
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
             }
         }
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                )
+        )
     }
 
     private var providerHeader: some View {

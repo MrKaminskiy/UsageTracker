@@ -153,15 +153,14 @@ actor CursorProvider {
         }
         defer { sqlite3_close(db) }
 
-        let query = "SELECT value FROM ItemTable WHERE key = ? LIMIT 1;"
+        // Use direct string interpolation to avoid binding issues
+        let query = "SELECT value FROM ItemTable WHERE key = '\(key)' LIMIT 1;"
         var stmt: OpaquePointer?
 
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
             return nil
         }
         defer { sqlite3_finalize(stmt) }
-
-        sqlite3_bind_text(stmt, 1, key, -1, nil)
 
         guard sqlite3_step(stmt) == SQLITE_ROW else {
             return nil
@@ -181,16 +180,15 @@ actor CursorProvider {
         }
         defer { sqlite3_close(db) }
 
-        let query = "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?);"
+        // Escape single quotes in value
+        let escapedValue = value.replacingOccurrences(of: "'", with: "''")
+        let query = "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('\(key)', '\(escapedValue)');"
         var stmt: OpaquePointer?
 
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
             return
         }
         defer { sqlite3_finalize(stmt) }
-
-        sqlite3_bind_text(stmt, 1, key, -1, nil)
-        sqlite3_bind_text(stmt, 2, value, -1, nil)
 
         sqlite3_step(stmt)
     }

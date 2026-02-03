@@ -1,5 +1,5 @@
 import Foundation
-import JavaScriptCore
+@preconcurrency import JavaScriptCore
 
 struct PluginMetadata {
     let id: String
@@ -36,7 +36,7 @@ private final class CompletionState: @unchecked Sendable {
     }
 }
 
-class PluginEngine {
+final class PluginEngine: @unchecked Sendable {
     private let timeout: TimeInterval = 10.0
 
     func parseMetadata(from js: String, id: String) throws -> PluginMetadata {
@@ -126,6 +126,118 @@ class PluginEngine {
         context.exceptionHandler = { _, exception in
             print("[Plugin Error] \(exception?.toString() ?? "Unknown")")
         }
+
+        // Add fetch function using URLSession with completion handler to avoid Swift 6 concurrency issues
+        let fetchBlock: @convention(block) (String, JSValue?) -> JSValue? = { urlString, options in
+            let promiseJS = """
+            new Promise(function(resolve, reject) {
+                __pendingFetch = { resolve: resolve, reject: reject };
+            })
+            """
+            let promise = context.evaluateScript(promiseJS)
+
+            guard let url = URL(string: urlString) else {
+                context.evaluateScript("__pendingFetch.reject(new Error('Invalid URL'))")
+                return promise
+            }
+
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 10
+
+            // Extract options synchronously
+            if let opts = options, !opts.isUndefined {
+                if let m = opts.objectForKeyedSubscript("method")?.toString(), m != "undefined" {
+                    request.httpMethod = m
+                }
+                if let h = opts.objectForKeyedSubscript("headers"), h.isObject {
+                    let keys = context.evaluateScript("Object.keys")?.call(withArguments: [h])
+                    let length = keys?.objectForKeyedSubscript("length")?.toInt32() ?? 0
+                    for i in 0..<length {
+                        if let key = keys?.objectAtIndexedSubscript(Int(i))?.toString(),
+                           let value = h.objectForKeyedSubscript(key)?.toString() {
+                            request.setValue(value, forHTTPHeaderField: key)
+                        }
+                    }
+                }
+                if let b = opts.objectForKeyedSubscript("body")?.toString(), b != "undefined" {
+                    request.httpBody = b.data(using: .utf8)
+                }
+            }
+
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        let errorMessage = error.localizedDescription.replacingOccurrences(of: "'", with: "\\'")
+                        context.evaluateScript("__pendingFetch.reject(new Error('\(errorMessage)'))")
+                        return
+                    }
+
+                    guard let data = data, let text = String(data: data, encoding: .utf8) else {
+                        context.evaluateScript("__pendingFetch.reject(new Error('No data'))")
+                        return
+                    }
+
+                    let httpResponse = response as? HTTPURLResponse
+                    let status = httpResponse?.statusCode ?? 200
+
+                    let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
+                        .replacingOccurrences(of: "`", with: "\\`")
+                        .replacingOccurrences(of: "$", with: "\\$")
+
+                    context.evaluateScript("""
+                        __pendingFetch.resolve({
+                            ok: \(status >= 200 && status < 300),
+                            status: \(status),
+                            text: function() { return Promise.resolve(`\(escaped)`); },
+                            json: function() { return Promise.resolve(JSON.parse(`\(escaped)`)); }
+                        })
+                    """)
+                }
+            }
+            task.resume()
+
+            return promise
+        }
+        context.setObject(fetchBlock, forKeyedSubscript: "fetch" as NSString)
+
+        // Add readFile function
+        let readFileBlock: @convention(block) (String) -> JSValue? = { path in
+            let promiseJS = """
+            new Promise(function(resolve, reject) {
+                __pendingRead = { resolve: resolve, reject: reject };
+            })
+            """
+            let promise = context.evaluateScript(promiseJS)
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                let expandedPath = NSString(string: path).expandingTildeInPath
+
+                do {
+                    let content = try String(contentsOfFile: expandedPath, encoding: .utf8)
+                    let escaped = content.replacingOccurrences(of: "\\", with: "\\\\")
+                        .replacingOccurrences(of: "`", with: "\\`")
+                        .replacingOccurrences(of: "$", with: "\\$")
+
+                    DispatchQueue.main.async {
+                        context.evaluateScript("__pendingRead.resolve(`\(escaped)`)")
+                    }
+                } catch {
+                    let errorMessage = error.localizedDescription.replacingOccurrences(of: "'", with: "\\'")
+                    DispatchQueue.main.async {
+                        context.evaluateScript("__pendingRead.reject(new Error('\(errorMessage)'))")
+                    }
+                }
+            }
+
+            return promise
+        }
+        context.setObject(readFileBlock, forKeyedSubscript: "readFile" as NSString)
+
+        // Add env function
+        let envBlock: @convention(block) (String) -> String? = { name in
+            ProcessInfo.processInfo.environment[name]
+        }
+        context.setObject(envBlock, forKeyedSubscript: "env" as NSString)
     }
 
     private func parseProbeResult(_ result: JSValue) -> [UsageItem] {

@@ -4,6 +4,11 @@ import ServiceManagement
 struct SettingsView: View {
     @ObservedObject var appState: AppState
     @State private var launchAtLogin: Bool = false
+    @State private var elevenLabsKey: String = ""
+    @State private var elevenLabsKeySaved: Bool = false
+
+    private let configDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".usagetracker")
 
     var body: some View {
         Form {
@@ -26,6 +31,34 @@ struct SettingsView: View {
                     }
             }
 
+            Section("API Keys") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "waveform")
+                        Text("ElevenLabs")
+                    }
+
+                    HStack {
+                        SecureField("xi-api-key...", text: $elevenLabsKey)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: elevenLabsKey) { _, _ in
+                                elevenLabsKeySaved = false
+                            }
+
+                        Button(elevenLabsKeySaved ? "Saved ✓" : "Save") {
+                            saveElevenLabsKey()
+                        }
+                        .disabled(elevenLabsKey.isEmpty)
+                        .buttonStyle(.borderedProminent)
+                        .tint(elevenLabsKeySaved ? .green : .blue)
+                    }
+
+                    Text("Get your key from elevenlabs.io/app/settings/api-keys")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+
             Section("Providers") {
                 HStack {
                     Image(systemName: "brain")
@@ -44,6 +77,42 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
+
+                HStack {
+                    Image(systemName: "terminal.fill")
+                    Text("Codex")
+                    Spacer()
+                    Text("via codex login")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Image(systemName: "waveform")
+                    Text("ElevenLabs")
+                    Spacer()
+                    Text("via API key")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Image(systemName: "music.note")
+                    Text("Suno")
+                    Spacer()
+                    Text("via browser extension")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Image(systemName: "bubble.left.fill")
+                    Text("ChatGPT")
+                    Spacer()
+                    Text("via browser extension")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section("About") {
@@ -56,9 +125,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 350, height: 280)
+        .frame(width: 380, height: 480)
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
+            loadElevenLabsKey()
         }
     }
 
@@ -71,6 +141,37 @@ struct SettingsView: View {
             }
         } catch {
             print("Failed to set launch at login: \(error)")
+        }
+    }
+
+    private func loadElevenLabsKey() {
+        let path = configDir.appendingPathComponent("elevenlabs.json")
+        guard let data = try? Data(contentsOf: path),
+              let config = try? JSONDecoder().decode([String: String].self, from: data),
+              let key = config["api_key"] else {
+            return
+        }
+        // Show masked version
+        if !key.isEmpty {
+            elevenLabsKey = key
+            elevenLabsKeySaved = true
+        }
+    }
+
+    private func saveElevenLabsKey() {
+        try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+
+        let path = configDir.appendingPathComponent("elevenlabs.json")
+        let config = ["api_key": elevenLabsKey]
+
+        if let data = try? JSONEncoder().encode(config) {
+            try? data.write(to: path)
+            elevenLabsKeySaved = true
+
+            // Trigger refresh to pick up new key
+            Task {
+                await appState.refresh()
+            }
         }
     }
 }

@@ -25,7 +25,8 @@ class AppState: ObservableObject {
     @Published var config: AppConfig = AppConfig()
     @Published var lastUpdated: Date?
 
-    private let pluginEngine = PluginEngine()
+    private let claudeProvider = ClaudeProvider()
+    private let cursorProvider = CursorProvider()
     private var refreshTimer: Timer?
 
     var maxPercentage: Double {
@@ -41,90 +42,25 @@ class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let plugins = loadPlugins()
+        // Fetch from all providers concurrently
+        async let claudeResult = claudeProvider.fetchUsage()
+        async let cursorResult = cursorProvider.fetchUsage()
 
-        await withTaskGroup(of: (String, Result<[UsageItem], Error>).self) { group in
-            for (id, js, _) in plugins {
-                group.addTask {
-                    do {
-                        let items = try await self.pluginEngine.runProbe(js: js)
-                        return (id, .success(items))
-                    } catch {
-                        return (id, .failure(error))
-                    }
-                }
-            }
+        let claude = try? await claudeResult
+        let cursor = try? await cursorResult
 
-            var results: [String: Result<[UsageItem], Error>] = [:]
-            for await (id, result) in group {
-                results[id] = result
-            }
+        var newProviders: [Provider] = []
 
-            providers = plugins.map { id, _, metadata in
-                switch results[id] {
-                case .success(let items)?:
-                    return Provider(
-                        id: id,
-                        name: metadata.name,
-                        icon: metadata.icon,
-                        items: items,
-                        status: .loaded
-                    )
-                case .failure(let error)?:
-                    return Provider(
-                        id: id,
-                        name: metadata.name,
-                        icon: metadata.icon,
-                        items: [],
-                        status: .error(error.localizedDescription)
-                    )
-                case nil:
-                    return Provider(
-                        id: id,
-                        name: metadata.name,
-                        icon: metadata.icon,
-                        items: [],
-                        status: .error("Unknown error")
-                    )
-                }
-            }
+        if let claude = claude {
+            newProviders.append(claude)
         }
 
+        if let cursor = cursor {
+            newProviders.append(cursor)
+        }
+
+        providers = newProviders
         lastUpdated = Date()
-    }
-
-    private func loadPlugins() -> [(String, String, PluginMetadata)] {
-        let pluginsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".usagetracker/plugins")
-
-        let bundledDir = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/DefaultPlugins")
-
-        var plugins: [(String, String, PluginMetadata)] = []
-
-        for dir in [pluginsDir, bundledDir] {
-            guard let files = try? FileManager.default.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: nil
-            ) else { continue }
-
-            for file in files where file.pathExtension == "js" {
-                let id = file.deletingPathExtension().lastPathComponent
-
-                if plugins.contains(where: { $0.0 == id }) { continue }
-
-                guard let js = try? String(contentsOf: file, encoding: .utf8) else { continue }
-
-                do {
-                    let metadata = try pluginEngine.parseMetadata(from: js, id: id)
-                    plugins.append((id, js, metadata))
-                } catch {
-                    print("Failed to parse plugin \(id): \(error)")
-                }
-            }
-        }
-
-        return plugins
     }
 
     func loadConfig() {

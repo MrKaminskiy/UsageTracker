@@ -25,22 +25,23 @@ struct MenuBarView: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "folder.badge.questionmark")
-                .font(.system(size: 24))
-                .foregroundColor(.secondary)
+            if appState.isLoading {
+                ProgressView()
+                    .scaleEffect(0.8)
+                Text("Loading...")
+                    .font(.system(size: 13, weight: .medium))
+            } else {
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 24))
+                    .foregroundColor(.secondary)
 
-            Text("No plugins found")
-                .font(.system(size: 13, weight: .medium))
+                Text("No usage data")
+                    .font(.system(size: 13, weight: .medium))
 
-            Text("Add plugins to ~/.usagetracker/plugins/")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-
-            Button("Open Plugins Folder") {
-                openPluginsFolder()
+                Text("Sign in to Claude Code or Cursor")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
@@ -97,11 +98,4 @@ struct MenuBarView: View {
         .font(.system(size: 11))
     }
 
-    private func openPluginsFolder() {
-        let pluginsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".usagetracker/plugins")
-
-        try? FileManager.default.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(pluginsDir)
-    }
 }

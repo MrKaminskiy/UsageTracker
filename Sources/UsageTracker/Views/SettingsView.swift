@@ -26,17 +26,23 @@ struct SettingsView: View {
                     }
             }
 
-            Section("Plugins") {
+            Section("Providers") {
                 HStack {
-                    Text("~/.usagetracker/plugins/")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
-
+                    Image(systemName: "brain")
+                    Text("Claude")
                     Spacer()
+                    Text("via Claude Code")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
 
-                    Button("Open") {
-                        openPluginsFolder()
-                    }
+                HStack {
+                    Image(systemName: "cursorarrow.rays")
+                    Text("Cursor")
+                    Spacer()
+                    Text("via Cursor app")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
             }
 
@@ -50,18 +56,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 350, height: 250)
+        .frame(width: 350, height: 280)
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
-    }
-
-    private func openPluginsFolder() {
-        let pluginsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".usagetracker/plugins")
-
-        try? FileManager.default.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(pluginsDir)
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {

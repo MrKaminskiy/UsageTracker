@@ -39,6 +39,8 @@ actor ClaudeProvider {
         }
     }
 
+    private let settingsURL = URL(string: "https://claude.ai/settings/usage")!
+
     func fetchUsage() async throws -> Provider {
         guard var credentials = loadCredentials() else {
             return Provider(
@@ -46,7 +48,7 @@ actor ClaudeProvider {
                 name: "Claude",
                 icon: "brain",
                 items: [],
-                status: .error("Not logged in. Run `claude` to authenticate.")
+                status: .notConnected(url: settingsURL)
             )
         }
 

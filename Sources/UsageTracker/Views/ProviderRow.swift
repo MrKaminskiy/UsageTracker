@@ -7,7 +7,18 @@ struct ProviderRow: View {
         VStack(alignment: .leading, spacing: 4) {
             providerHeader
 
-            if provider.isExpanded {
+            if case .notConnected(let url) = provider.status {
+                HStack {
+                    Spacer()
+                    Button("View Usage") {
+                        NSWorkspace.shared.open(url)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            } else if provider.isExpanded {
                 ForEach(provider.items) { item in
                     UsageItemRow(item: item)
                 }
@@ -40,6 +51,10 @@ struct ProviderRow: View {
                 case .loading:
                     ProgressView()
                         .scaleEffect(0.6)
+                case .notConnected:
+                    Text("Not connected")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
                 case .error(let message):
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundColor(.orange)

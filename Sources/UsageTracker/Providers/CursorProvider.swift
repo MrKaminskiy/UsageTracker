@@ -28,6 +28,8 @@ actor CursorProvider {
         }
     }
 
+    private let settingsURL = URL(string: "https://cursor.sh/settings")!
+
     func fetchUsage() async throws -> Provider {
         guard var accessToken = readStateValue("cursorAuth/accessToken"),
               let refreshToken = readStateValue("cursorAuth/refreshToken") else {
@@ -36,7 +38,7 @@ actor CursorProvider {
                 name: "Cursor",
                 icon: "cursorarrow.rays",
                 items: [],
-                status: .error("Not logged in. Sign in via Cursor app.")
+                status: .notConnected(url: settingsURL)
             )
         }
 

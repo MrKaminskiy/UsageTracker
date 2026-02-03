@@ -24,6 +24,7 @@ struct UsageItem: Identifiable, Equatable {
 enum ProviderStatus: Equatable {
     case loading
     case loaded
+    case notConnected(url: URL)
     case error(String)
 }
 

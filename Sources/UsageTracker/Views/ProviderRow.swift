@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProviderRow: View {
     @Binding var provider: Provider
+    var isDisplayedInBar: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,10 +23,16 @@ struct ProviderRow: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 10)
             } else if provider.isExpanded && !provider.items.isEmpty {
+                // Find the first item with max percentage
+                let maxItemId = provider.items.max(by: { $0.percentage < $1.percentage })?.id
+
                 // Inset content area
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(provider.items) { item in
-                        UsageItemRow(item: item)
+                        UsageItemRow(
+                            item: item,
+                            isDisplayedInBar: isDisplayedInBar && item.id == maxItemId
+                        )
                     }
                 }
                 .padding(.vertical, 8)
@@ -79,9 +86,9 @@ struct ProviderRow: View {
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 case .error(let message):
-                    Image(systemName: "exclamationmark.triangle")
+                    Text(message)
+                        .font(.system(size: 10))
                         .foregroundColor(.orange)
-                        .help(message)
                 case .loaded:
                     Text("\(Int(provider.maxPercentage))%")
                         .font(.system(size: 11))
@@ -95,13 +102,21 @@ struct ProviderRow: View {
 
 struct UsageItemRow: View {
     let item: UsageItem
+    var isDisplayedInBar: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(item.label)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .frame(width: 80, alignment: .leading)
+            HStack(spacing: 0) {
+                Circle()
+                    .fill(isDisplayedInBar ? Color.green : Color.clear)
+                    .frame(width: 5, height: 5)
+                    .padding(.trailing, 6)
+
+                Text(item.label)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 80, alignment: .leading)
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {

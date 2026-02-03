@@ -73,11 +73,18 @@ struct MenuBarView: View {
         .padding(.vertical, 20)
     }
 
+    private var maxProvider: Provider? {
+        appState.visibleProviders.max(by: { $0.maxPercentage < $1.maxPercentage })
+    }
+
     private var providerList: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(appState.visibleProviders) { provider in
                 if let index = appState.providers.firstIndex(where: { $0.id == provider.id }) {
-                    ProviderRow(provider: $appState.providers[index])
+                    ProviderRow(
+                        provider: $appState.providers[index],
+                        isDisplayedInBar: provider.id == maxProvider?.id && provider.maxPercentage > 0
+                    )
                 }
             }
         }
@@ -110,11 +117,12 @@ struct MenuBarView: View {
 
             Spacer()
 
-            SettingsLink {
+            Button {
+                NotificationCenter.default.post(name: .openSettings, object: nil)
+            } label: {
                 Image(systemName: "gear")
             }
             .buttonStyle(.icon)
         }
     }
-
 }

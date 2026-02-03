@@ -63,6 +63,7 @@ struct AppConfig: Codable {
     var refreshIntervalMinutes: Int = 10
     var launchAtLogin: Bool = false
     var hideNotConnected: Bool = true
+    var hasCompletedOnboarding: Bool = false
     var enabledProviders: [String: Bool] = [
         "claude": true,
         "cursor": true,
@@ -71,6 +72,15 @@ struct AppConfig: Codable {
         "stability": true,
         "runway": true,
         "openai": true
+    ]
+    var providerOrder: [String] = [
+        "claude",
+        "cursor",
+        "codex",
+        "elevenlabs",
+        "stability",
+        "runway",
+        "openai"
     ]
 
     func isProviderEnabled(_ id: String) -> Bool {

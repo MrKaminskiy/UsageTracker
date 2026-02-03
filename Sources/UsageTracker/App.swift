@@ -40,6 +40,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await appState.refresh()
         }
+
+        // Show onboarding on first launch
+        if !appState.config.hasCompletedOnboarding {
+            statusBarController.showOnboarding()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -175,8 +180,18 @@ class AppState: ObservableObject {
         saveConfig()
     }
 
+    func updateProviderOrder(_ order: [String]) {
+        config.providerOrder = order
+        saveConfig()
+    }
+
+    func completeOnboarding() {
+        config.hasCompletedOnboarding = true
+        saveConfig()
+    }
+
     var visibleProviders: [Provider] {
-        providers.filter { provider in
+        let filtered = providers.filter { provider in
             // Check if provider is enabled in settings
             guard config.isProviderEnabled(provider.id) else { return false }
 
@@ -188,6 +203,13 @@ class AppState: ObservableObject {
             }
 
             return true
+        }
+
+        // Sort by configured order
+        return filtered.sorted { a, b in
+            let indexA = config.providerOrder.firstIndex(of: a.id) ?? Int.max
+            let indexB = config.providerOrder.firstIndex(of: b.id) ?? Int.max
+            return indexA < indexB
         }
     }
 

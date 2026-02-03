@@ -20,91 +20,100 @@ struct SettingsView: View {
     private let configDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".usagetracker")
 
-    /// Provider list with optional API key configuration.
-    private var providerSettings: [ProviderSettingsItem] {
+    /// All provider definitions
+    private var allProviders: [String: ProviderSettingsItem] {
         [
-            ProviderSettingsItem(
+            "claude": ProviderSettingsItem(
                 id: "claude",
                 icon: "brain",
                 name: "Claude",
                 hint: "via Claude Code",
                 keyConfig: nil
             ),
-            ProviderSettingsItem(
+            "cursor": ProviderSettingsItem(
                 id: "cursor",
                 icon: "cursorarrow.rays",
                 name: "Cursor",
                 hint: "via Cursor app",
                 keyConfig: nil
             ),
-            ProviderSettingsItem(
+            "codex": ProviderSettingsItem(
                 id: "codex",
                 icon: "terminal.fill",
                 name: "Codex",
                 hint: "via codex login",
                 keyConfig: nil
             ),
-            ProviderSettingsItem(
+            "elevenlabs": ProviderSettingsItem(
                 id: "elevenlabs",
                 icon: "waveform",
                 name: "ElevenLabs",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
-                    placeholder: "xi-api-key...",
+                    placeholder: "API key",
                     hint: "elevenlabs.io/app/settings/api-keys",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://elevenlabs.io/app/settings/api-keys"),
                     key: $elevenLabsKey,
                     saved: $elevenLabsSaved,
-                    onSave: { saveKey("elevenlabs", elevenLabsKey) }
+                    onSave: { saveKey("elevenlabs", elevenLabsKey) },
+                    validateKey: validateElevenLabsKey
                 )
             ),
-            ProviderSettingsItem(
+            "stability": ProviderSettingsItem(
                 id: "stability",
                 icon: "paintbrush",
                 name: "Stability AI",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
-                    placeholder: "sk-...",
+                    placeholder: "API key",
                     hint: "platform.stability.ai/account/keys",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://platform.stability.ai/account/keys"),
                     key: $stabilityKey,
                     saved: $stabilitySaved,
-                    onSave: { saveKey("stability", stabilityKey) }
+                    onSave: { saveKey("stability", stabilityKey) },
+                    validateKey: validateStabilityKey
                 )
             ),
-            ProviderSettingsItem(
+            "runway": ProviderSettingsItem(
                 id: "runway",
                 icon: "film",
                 name: "Runway",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
-                    placeholder: "key_...",
+                    placeholder: "API key",
                     hint: "dev.runwayml.com",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://dev.runwayml.com"),
                     key: $runwayKey,
                     saved: $runwaySaved,
-                    onSave: { saveKey("runway", runwayKey) }
+                    onSave: { saveKey("runway", runwayKey) },
+                    validateKey: validateRunwayKey
                 )
             ),
-            ProviderSettingsItem(
+            "openai": ProviderSettingsItem(
                 id: "openai",
                 icon: "sparkles",
                 name: "OpenAI API",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
-                    placeholder: "sk-...",
+                    placeholder: "API key",
                     hint: "platform.openai.com/api-keys",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://platform.openai.com/api-keys"),
                     key: $openAIKey,
                     saved: $openAISaved,
-                    onSave: { saveKey("openai", openAIKey) }
+                    onSave: { saveKey("openai", openAIKey) },
+                    validateKey: validateOpenAIKey
                 )
             )
         ]
+    }
+
+    /// Provider list sorted by user's configured order
+    private var providerSettings: [ProviderSettingsItem] {
+        appState.config.providerOrder.compactMap { allProviders[$0] }
     }
 
     /// Returns the app version string for display.
@@ -124,34 +133,14 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                Picker("Interval", selection: Binding(
-                    get: { appState.config.refreshIntervalMinutes },
-                    set: { appState.updateRefreshInterval($0) }
-                )) {
-                    Text("10 minutes").tag(10)
-                    Text("15 minutes").tag(15)
-                    Text("30 minutes").tag(30)
-                    Text("60 minutes").tag(60)
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Refresh")
-            } footer: {
-                Text("All providers refresh together. Default interval is 10 minutes.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-
-            Section("Startup") {
+        NavigationStack {
+            Form {
+            Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
                         setLaunchAtLogin(newValue)
                     }
-            }
 
-            Section("Display") {
                 Toggle("Hide not connected", isOn: Binding(
                     get: { appState.config.hideNotConnected },
                     set: { appState.updateHideNotConnected($0) }
@@ -161,32 +150,39 @@ struct SettingsView: View {
             Section("Providers & Keys") {
                 ForEach(providerSettings) { provider in
                     ProviderSettingsRow(provider: provider, appState: appState)
+                        .onDrag {
+                            NSItemProvider(object: provider.id as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: ProviderDropDelegate(
+                            item: provider.id,
+                            appState: appState
+                        ))
                 }
             }
 
             Section("About") {
+                NavigationLink {
+                    HelpView()
+                } label: {
+                    Label("How It Works", systemImage: "questionmark.circle")
+                }
+            }
+
+            Section {
                 HStack {
                     Text("UsageTracker")
                     Spacer()
                     Text(appVersionLabel)
                         .foregroundColor(.secondary)
                 }
-
-                HStack {
-                    Button("Open plugins folder") {
-                        openPluginsFolder()
-                    }
-
-                    Spacer()
-
-                    Button("Check for updates") {
-                        checkForUpdates()
-                    }
-                }
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 400, height: 780)
+            .formStyle(.grouped)
+            .scrollIndicators(.never)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Settings")
+        }
+        .frame(width: 400, height: 600)
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             loadAllKeys()
@@ -257,23 +253,104 @@ struct SettingsView: View {
         }
     }
 
-    /// Opens the plugins folder in Finder.
-    private func openPluginsFolder() {
-        let pluginsDir = configDir.appendingPathComponent("plugins")
-        try? FileManager.default.createDirectory(at: pluginsDir, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(pluginsDir)
+    // MARK: - API Key Validation
+
+    private func validateElevenLabsKey(_ key: String) async -> (Bool, String?) {
+        let url = URL(string: "https://api.elevenlabs.io/v1/user")!
+        var request = URLRequest(url: url)
+        request.setValue(key, forHTTPHeaderField: "xi-api-key")
+        request.timeoutInterval = 10
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 { return (true, nil) }
+                if httpResponse.statusCode == 401 { return (false, "Invalid API key") }
+                return (false, "HTTP \(httpResponse.statusCode)")
+            }
+            return (false, "Invalid response")
+        } catch {
+            return (false, "Connection failed")
+        }
     }
 
-    /// Triggers a standard update check action if supported.
-    private func checkForUpdates() {
-        NSApp.sendAction(Selector(("checkForUpdates:")), to: nil, from: nil)
+    private func validateStabilityKey(_ key: String) async -> (Bool, String?) {
+        let url = URL(string: "https://api.stability.ai/v1/user/account")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 { return (true, nil) }
+                if httpResponse.statusCode == 401 { return (false, "Invalid API key") }
+                return (false, "HTTP \(httpResponse.statusCode)")
+            }
+            return (false, "Invalid response")
+        } catch {
+            return (false, "Connection failed")
+        }
     }
+
+    private func validateRunwayKey(_ key: String) async -> (Bool, String?) {
+        // Runway doesn't have a simple validation endpoint, so we just check format
+        if key.hasPrefix("key_") && key.count > 10 {
+            return (true, nil)
+        }
+        return (false, "Key should start with 'key_'")
+    }
+
+    private func validateOpenAIKey(_ key: String) async -> (Bool, String?) {
+        // Admin keys (sk-admin-) use different endpoints than project keys
+        let isAdminKey = key.hasPrefix("sk-admin-")
+
+        let url: URL
+        if isAdminKey {
+            // Admin keys: test with organization costs endpoint
+            let now = Int(Date().timeIntervalSince1970)
+            let start = now - 86400 // 1 day ago
+            url = URL(string: "https://api.openai.com/v1/organization/costs?start_time=\(start)&end_time=\(now)&bucket_width=1d")!
+        } else {
+            // Project keys: test with models endpoint
+            url = URL(string: "https://api.openai.com/v1/models")!
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 { return (true, nil) }
+                if httpResponse.statusCode == 401 { return (false, "Invalid API key") }
+                if httpResponse.statusCode == 403 {
+                    if isAdminKey {
+                        return (false, "Need usage scope")
+                    }
+                    return (false, "Missing permissions")
+                }
+                return (false, "HTTP \(httpResponse.statusCode)")
+            }
+            return (false, "Invalid response")
+        } catch {
+            return (false, "Connection failed")
+        }
+    }
+
 }
 
-/// API key entry UI with save button and link.
+/// Validation state for API keys
+enum KeyValidationState {
+    case idle
+    case checking
+    case valid
+    case invalid(String)
+}
+
+/// API key entry UI with auto-validation.
 struct APIKeyInput: View {
-    let icon: String
-    let name: String
     let placeholder: String
     let hint: String
     let linkTitle: String
@@ -281,41 +358,116 @@ struct APIKeyInput: View {
     @Binding var key: String
     @Binding var saved: Bool
     let onSave: () -> Void
+    let validateKey: (String) async -> (Bool, String?)
+
+    @State private var validationState: KeyValidationState = .idle
+    @State private var validationTask: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: icon)
-                    .frame(width: 16)
-                Text(name)
-                    .fontWeight(.medium)
-            }
-
-            HStack {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
                 SecureField(placeholder, text: $key)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: key) { _, _ in
+                    .textFieldStyle(.plain)
+                    .padding(6)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(borderColor, lineWidth: 1)
+                    )
+                    .onChange(of: key) { _, newValue in
                         saved = false
+                        validateKeyDebounced(newValue)
                     }
 
-                Button(saved ? "✓" : "Save") {
-                    onSave()
+                if case .checking = validationState {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: 44, height: 24)
+                } else {
+                    Button(buttonLabel) {
+                        onSave()
+                    }
+                    .disabled(key.isEmpty || !isValid)
+                    .buttonStyle(.borderedProminent)
+                    .tint(buttonTint)
+                    .controlSize(.small)
                 }
-                .disabled(key.isEmpty)
-                .buttonStyle(.borderedProminent)
-                .tint(saved ? .green : .blue)
-                .frame(width: 50)
             }
 
-            Text(hint)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-            if let linkURL = linkURL {
-                Link(linkTitle, destination: linkURL)
-                    .font(.system(size: 10))
+            HStack(spacing: 4) {
+                if case .invalid(let message) = validationState {
+                    Text(message)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                } else if case .valid = validationState {
+                    Text("Key valid")
+                        .font(.system(size: 10))
+                        .foregroundColor(.green)
+                } else {
+                    Text(hint)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    if let linkURL = linkURL {
+                        Link(linkTitle, destination: linkURL)
+                            .font(.system(size: 10))
+                    }
+                }
             }
         }
-        .padding(.vertical, 4)
+    }
+
+    private var borderColor: Color {
+        switch validationState {
+        case .invalid: return Color.red.opacity(0.8)
+        case .valid: return Color.green.opacity(0.8)
+        default: return Color.gray.opacity(0.3)
+        }
+    }
+
+    private var isValid: Bool {
+        if case .invalid = validationState { return false }
+        return true
+    }
+
+    private var buttonLabel: String {
+        if saved { return "✓" }
+        if case .valid = validationState { return "Save" }
+        return "Save"
+    }
+
+    private var buttonTint: Color {
+        if saved { return .green }
+        if case .valid = validationState { return .blue }
+        return .gray
+    }
+
+    private func validateKeyDebounced(_ newKey: String) {
+        validationTask?.cancel()
+
+        guard !newKey.isEmpty else {
+            validationState = .idle
+            return
+        }
+
+        validationTask = Task {
+            // Debounce - wait before validating
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run { validationState = .checking }
+
+            let (isValid, errorMessage) = await validateKey(newKey)
+
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if isValid {
+                    validationState = .valid
+                } else {
+                    validationState = .invalid(errorMessage ?? "Invalid key")
+                }
+            }
+        }
     }
 }
 
@@ -328,19 +480,32 @@ struct ProviderToggle: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        Toggle(isOn: Binding(
-            get: { appState.config.isProviderEnabled(id) },
-            set: { appState.updateProviderEnabled(id, enabled: $0) }
-        )) {
-            HStack {
-                Image(systemName: icon)
-                    .frame(width: 16)
+        HStack {
+            // Drag handle
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11))
+                .foregroundColor(Color.gray.opacity(0.5))
+                .frame(width: 16)
+
+            Image(systemName: icon)
+                .frame(width: 20)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                Spacer()
                 Text(hint)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
             }
+
+            Spacer()
+
+            Toggle("", isOn: Binding(
+                get: { appState.config.isProviderEnabled(id) },
+                set: { appState.updateProviderEnabled(id, enabled: $0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
         }
     }
 }
@@ -351,7 +516,7 @@ struct ProviderSettingsRow: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ProviderToggle(
                 icon: provider.icon,
                 name: provider.name,
@@ -362,17 +527,16 @@ struct ProviderSettingsRow: View {
 
             if let keyConfig = provider.keyConfig {
                 APIKeyInput(
-                    icon: provider.icon,
-                    name: provider.name,
                     placeholder: keyConfig.placeholder,
                     hint: keyConfig.hint,
                     linkTitle: keyConfig.linkTitle,
                     linkURL: keyConfig.linkURL,
                     key: keyConfig.key,
                     saved: keyConfig.saved,
-                    onSave: keyConfig.onSave
+                    onSave: keyConfig.onSave,
+                    validateKey: keyConfig.validateKey
                 )
-                .padding(.leading, 22)
+                .padding(.leading, 44)
             }
         }
         .padding(.vertical, 4)
@@ -397,4 +561,163 @@ struct ProviderKeyConfig {
     let key: Binding<String>
     let saved: Binding<Bool>
     let onSave: () -> Void
+    let validateKey: (String) async -> (Bool, String?)
+}
+
+/// Drop delegate for provider reordering
+struct ProviderDropDelegate: DropDelegate {
+    let item: String
+    let appState: AppState
+
+    func performDrop(info: DropInfo) -> Bool {
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedItem = info.itemProviders(for: [.text]).first else { return }
+
+        draggedItem.loadObject(ofClass: NSString.self) { reading, _ in
+            guard let draggedId = reading as? String, draggedId != item else { return }
+
+            DispatchQueue.main.async {
+                var order = appState.config.providerOrder
+                guard let fromIndex = order.firstIndex(of: draggedId),
+                      let toIndex = order.firstIndex(of: item) else { return }
+
+                withAnimation {
+                    order.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+                    appState.updateProviderOrder(order)
+                }
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
+}
+
+/// Help page view
+struct HelpView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Form {
+            Section("Auto-Detected Services") {
+                HelpRow(
+                    icon: "brain",
+                    iconColor: .purple,
+                    title: "Claude",
+                    description: "Detected from Claude Code CLI. Run 'claude' in terminal to sign in."
+                )
+                HelpRow(
+                    icon: "cursorarrow.rays",
+                    iconColor: .blue,
+                    title: "Cursor",
+                    description: "Detected from Cursor app. Sign in to Cursor to see your usage."
+                )
+                HelpRow(
+                    icon: "terminal.fill",
+                    iconColor: .green,
+                    title: "Codex",
+                    description: "Detected from Codex CLI. Run 'codex login' in terminal to sign in."
+                )
+            }
+
+            Section("API Key Services") {
+                HelpRow(
+                    icon: "sparkles",
+                    iconColor: .teal,
+                    title: "OpenAI",
+                    description: "Add API key from platform.openai.com/api-keys"
+                )
+                HelpRow(
+                    icon: "waveform",
+                    iconColor: .pink,
+                    title: "ElevenLabs",
+                    description: "Add API key from elevenlabs.io/app/settings/api-keys"
+                )
+                HelpRow(
+                    icon: "paintbrush",
+                    iconColor: .orange,
+                    title: "Stability AI",
+                    description: "Add API key from platform.stability.ai/account/keys"
+                )
+                HelpRow(
+                    icon: "film",
+                    iconColor: .red,
+                    title: "Runway",
+                    description: "Add API key from dev.runwayml.com"
+                )
+            }
+
+            Section("Tips") {
+                HelpRow(
+                    icon: "cursorarrow.click.2",
+                    iconColor: .blue,
+                    title: "View Usage",
+                    description: "Left-click the menu bar icon to see your usage stats."
+                )
+                HelpRow(
+                    icon: "contextualmenu.and.cursorarrow",
+                    iconColor: .gray,
+                    title: "Quick Access",
+                    description: "Right-click for Settings, Clear Cache, and Quit options."
+                )
+                HelpRow(
+                    icon: "line.3.horizontal",
+                    iconColor: .purple,
+                    title: "Reorder",
+                    description: "Drag providers in Settings to change display order."
+                )
+                HelpRow(
+                    icon: "eye.slash",
+                    iconColor: .secondary,
+                    title: "Hide Services",
+                    description: "Toggle off services you don't use in Settings."
+                )
+            }
+        }
+        .formStyle(.grouped)
+        .scrollIndicators(.never)
+        .navigationTitle("How It Works")
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+}
+
+/// Help row for the How It Works section
+struct HelpRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let description: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(iconColor)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(description)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 2)
+    }
 }

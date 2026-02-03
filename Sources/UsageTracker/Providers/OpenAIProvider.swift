@@ -1,8 +1,8 @@
 import Foundation
 
 actor OpenAIProvider {
-    private let billingURL = URL(string: "https://api.openai.com/v1/dashboard/billing/subscription")!
-    private let usageURL = URL(string: "https://api.openai.com/v1/dashboard/billing/usage")!
+    private let usageURL = URL(string: "https://api.openai.com/v1/usage")!
+    private let costsURL = URL(string: "https://api.openai.com/v1/organization/costs")!
     private let settingsURL = URL(string: "https://platform.openai.com/usage")!
 
     private var apiKey: String? {
@@ -22,21 +22,61 @@ actor OpenAIProvider {
         }
     }
 
-    struct SubscriptionResponse: Codable {
-        var hardLimitUsd: Double?
-        var softLimitUsd: Double?
+    struct CostsResponse: Codable {
+        var object: String?
+        var data: [CostBucket]?
 
-        enum CodingKeys: String, CodingKey {
-            case hardLimitUsd = "hard_limit_usd"
-            case softLimitUsd = "soft_limit_usd"
+        struct CostBucket: Codable {
+            var results: [CostResult]?
+        }
+
+        struct CostResult: Codable {
+            var amount: CostAmount?
+
+            struct CostAmount: Codable {
+                var value: String?  // API returns string, not number
+
+                var doubleValue: Double {
+                    Double(value ?? "0") ?? 0
+                }
+            }
         }
     }
 
     struct UsageResponse: Codable {
-        var totalUsage: Double? // in cents
+        var object: String?
+        var data: [UsageData]?
+        var whisperApiData: [UsageData]?
+        var dalleApiData: [UsageData]?
+        var ttsApiData: [UsageData]?
 
         enum CodingKeys: String, CodingKey {
-            case totalUsage = "total_usage"
+            case object, data
+            case whisperApiData = "whisper_api_data"
+            case dalleApiData = "dalle_api_data"
+            case ttsApiData = "tts_api_data"
+        }
+    }
+
+    struct UsageData: Codable {
+        var aggregationTimestamp: Int?
+        var nRequests: Int?
+        var operation: String?
+        var snapshotId: String?
+        var nContext: Int?
+        var nContextTokensTotal: Int?
+        var nGenerated: Int?
+        var nGeneratedTokensTotal: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case aggregationTimestamp = "aggregation_timestamp"
+            case nRequests = "n_requests"
+            case operation
+            case snapshotId = "snapshot_id"
+            case nContext = "n_context"
+            case nContextTokensTotal = "n_context_tokens_total"
+            case nGenerated = "n_generated"
+            case nGeneratedTokensTotal = "n_generated_tokens_total"
         }
     }
 
@@ -51,111 +91,142 @@ actor OpenAIProvider {
             )
         }
 
-        // Get subscription info (limits)
-        var subRequest = URLRequest(url: billingURL)
-        subRequest.httpMethod = "GET"
-        subRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        subRequest.timeoutInterval = 10
+        // Detect key type: admin keys start with "sk-admin-"
+        let isAdminKey = apiKey.hasPrefix("sk-admin-")
 
-        // Get usage for current month
+        if isAdminKey {
+            return try await fetchWithAdminKey(apiKey)
+        } else {
+            return try await fetchWithProjectKey(apiKey)
+        }
+    }
+
+    private func fetchWithAdminKey(_ apiKey: String) async throws -> Provider {
+        // Get costs for current month using organization costs endpoint
         let calendar = Calendar.current
         let now = Date()
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
 
-        var usageURLWithParams = URLComponents(url: usageURL, resolvingAgainstBaseURL: false)!
-        usageURLWithParams.queryItems = [
-            URLQueryItem(name: "start_date", value: formatDate(startOfMonth)),
-            URLQueryItem(name: "end_date", value: formatDate(now))
+        var urlComponents = URLComponents(url: costsURL, resolvingAgainstBaseURL: false)!
+        urlComponents.queryItems = [
+            URLQueryItem(name: "start_time", value: "\(Int(startOfMonth.timeIntervalSince1970))"),
+            URLQueryItem(name: "end_time", value: "\(Int(now.timeIntervalSince1970))"),
+            URLQueryItem(name: "bucket_width", value: "1d")
         ]
 
-        var usageRequest = URLRequest(url: usageURLWithParams.url!)
-        usageRequest.httpMethod = "GET"
-        usageRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        usageRequest.timeoutInterval = 10
+        var request = URLRequest(url: urlComponents.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
 
-        // Fetch both concurrently
-        async let subResult = URLSession.shared.data(for: subRequest)
-        async let usageResult = URLSession.shared.data(for: usageRequest)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
-        let (subData, subResponse) = try await subResult
-        let (usageData, usageResponse) = try await usageResult
-
-        guard let subHttpResponse = subResponse as? HTTPURLResponse,
-              let usageHttpResponse = usageResponse as? HTTPURLResponse else {
-            return Provider(
-                id: "openai",
-                name: "OpenAI API",
-                icon: "sparkles",
-                items: [],
-                status: .error("Invalid response")
-            )
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("Invalid response"))
         }
 
-        if subHttpResponse.statusCode == 401 || usageHttpResponse.statusCode == 401 {
-            return Provider(
-                id: "openai",
-                name: "OpenAI API",
-                icon: "sparkles",
-                items: [],
-                status: .error("Invalid API key")
-            )
+        if httpResponse.statusCode == 401 {
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("Invalid key"))
         }
 
-        guard subHttpResponse.statusCode >= 200 && subHttpResponse.statusCode < 300,
-              usageHttpResponse.statusCode >= 200 && usageHttpResponse.statusCode < 300 else {
-            return Provider(
-                id: "openai",
-                name: "OpenAI API",
-                icon: "sparkles",
-                items: [],
-                status: .error("HTTP error")
-            )
+        if httpResponse.statusCode == 403 {
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("Need usage scope"))
         }
 
-        let subscription = try? JSONDecoder().decode(SubscriptionResponse.self, from: subData)
-        let usage = try? JSONDecoder().decode(UsageResponse.self, from: usageData)
+        guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("HTTP \(httpResponse.statusCode)"))
+        }
 
-        var items: [UsageItem] = []
+        let costs = try? JSONDecoder().decode(CostsResponse.self, from: data)
 
-        if let totalUsageCents = usage?.totalUsage {
-            let usedUsd = totalUsageCents / 100.0
-            let limit = subscription?.hardLimitUsd ?? subscription?.softLimitUsd ?? 120.0
-
-            if limit > 0 {
-                let percentage = (usedUsd / limit) * 100
-                let daysLeft = daysUntilEndOfMonth()
-                items.append(UsageItem(
-                    label: "Usage",
-                    current: min(percentage, 100),
-                    limit: 100,
-                    resetLabel: "\(daysLeft)d"
-                ))
+        // Sum up all costs for the month
+        var totalCost: Double = 0
+        if let buckets = costs?.data {
+            for bucket in buckets {
+                for result in (bucket.results ?? []) {
+                    totalCost += result.amount?.doubleValue ?? 0
+                }
             }
         }
 
-        return Provider(
-            id: "openai",
-            name: "OpenAI API",
-            icon: "sparkles",
-            items: items,
-            status: items.isEmpty ? .error("No usage data") : .loaded
-        )
+        // Show spending as dollar amount (no percentage since we don't have budget from API)
+        let items = [UsageItem(
+            label: "Spend",
+            current: 0,
+            limit: 100,
+            resetLabel: String(format: "$%.2f this month", totalCost)
+        )]
+
+        return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: items, status: .loaded)
     }
 
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
+    private func fetchWithProjectKey(_ apiKey: String) async throws -> Provider {
+        // Get usage for today using v1/usage endpoint
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = dateFormatter.string(from: Date())
 
-    private func daysUntilEndOfMonth() -> Int {
-        let calendar = Calendar.current
-        let now = Date()
-        guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1, day: -1),
-                                              to: calendar.date(from: calendar.dateComponents([.year, .month], from: now))!) else {
-            return 0
+        var urlComponents = URLComponents(url: usageURL, resolvingAgainstBaseURL: false)!
+        urlComponents.queryItems = [URLQueryItem(name: "date", value: today)]
+
+        var request = URLRequest(url: urlComponents.url!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("Invalid response"))
         }
-        let days = calendar.dateComponents([.day], from: now, to: endOfMonth).day ?? 0
-        return max(0, days)
+
+        if httpResponse.statusCode == 401 {
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("Invalid key"))
+        }
+
+        guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("HTTP \(httpResponse.statusCode)"))
+        }
+
+        let usage = try? JSONDecoder().decode(UsageResponse.self, from: data)
+
+        var totalRequests = 0
+        var totalTokens = 0
+
+        if let dataItems = usage?.data {
+            for item in dataItems {
+                totalRequests += item.nRequests ?? 0
+                totalTokens += (item.nContextTokensTotal ?? 0) + (item.nGeneratedTokensTotal ?? 0)
+            }
+        }
+
+        for item in (usage?.whisperApiData ?? []) { totalRequests += item.nRequests ?? 0 }
+        for item in (usage?.dalleApiData ?? []) { totalRequests += item.nRequests ?? 0 }
+        for item in (usage?.ttsApiData ?? []) { totalRequests += item.nRequests ?? 0 }
+
+        var items: [UsageItem] = []
+
+        if totalRequests > 0 || totalTokens > 0 {
+            items.append(UsageItem(
+                label: "Requests",
+                current: Double(min(totalRequests, 1000)),
+                limit: 1000,
+                resetLabel: "\(totalRequests) today"
+            ))
+
+            let tokensK = Double(totalTokens) / 1000.0
+            items.append(UsageItem(
+                label: "Tokens",
+                current: min(tokensK, 1000),
+                limit: 1000,
+                resetLabel: String(format: "%.1fK today", tokensK)
+            ))
+        }
+
+        if items.isEmpty {
+            items.append(UsageItem(label: "Today", current: 0, limit: 100, resetLabel: "No usage"))
+        }
+
+        return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: items, status: .loaded)
     }
 }

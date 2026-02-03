@@ -1,18 +1,106 @@
 import SwiftUI
 import AppKit
 
+extension Notification.Name {
+    static let openSettings = Notification.Name("openSettings")
+}
+
+@MainActor
+class SettingsWindowController: NSObject, NSWindowDelegate {
+    private var window: NSWindow?
+    private var appState: AppState
+
+    init(appState: AppState) {
+        self.appState = appState
+        super.init()
+    }
+
+    func showSettings() {
+        if let existingWindow = window, existingWindow.isVisible {
+            existingWindow.orderFrontRegardless()
+            existingWindow.makeKey()
+            return
+        }
+
+        let settingsView = SettingsView(appState: appState)
+        let hostingController = NSHostingController(rootView: settingsView)
+
+        let newWindow = NSWindow(contentViewController: hostingController)
+        newWindow.title = "UsageTracker Settings"
+        newWindow.styleMask = [.titled, .closable]
+        newWindow.center()
+        newWindow.delegate = self
+        newWindow.isReleasedWhenClosed = false
+        newWindow.level = .floating
+
+        self.window = newWindow
+
+        newWindow.orderFrontRegardless()
+        newWindow.makeKey()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Nothing needed - we stay in accessory mode
+    }
+}
+
+@MainActor
+class OnboardingWindowController: NSObject, NSWindowDelegate {
+    private var window: NSWindow?
+    private var appState: AppState
+
+    init(appState: AppState) {
+        self.appState = appState
+        super.init()
+    }
+
+    func showOnboarding() {
+        if let existingWindow = window, existingWindow.isVisible {
+            existingWindow.orderFrontRegardless()
+            existingWindow.makeKey()
+            return
+        }
+
+        let onboardingView = OnboardingView {
+            self.appState.completeOnboarding()
+            self.window?.close()
+        }
+        let hostingController = NSHostingController(rootView: onboardingView)
+
+        let newWindow = NSWindow(contentViewController: hostingController)
+        newWindow.title = "Welcome to UsageTracker"
+        newWindow.styleMask = [.titled, .closable]
+        newWindow.center()
+        newWindow.delegate = self
+        newWindow.isReleasedWhenClosed = false
+        newWindow.level = .floating
+
+        self.window = newWindow
+
+        newWindow.orderFrontRegardless()
+        newWindow.makeKey()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        appState.completeOnboarding()
+    }
+}
+
 @MainActor
 class StatusBarController: NSObject, ObservableObject {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var contextMenu: NSMenu!
     private var eventMonitor: Any?
-    private weak var appState: AppState?
+    private var appState: AppState?
+    private var settingsWindowController: SettingsWindowController?
+    private var onboardingWindowController: OnboardingWindowController?
     var onClearCache: (() -> Void)?
 
-    /// Initializes the status bar UI and click handlers.
     func setup(with contentView: some View, appState: AppState) {
         self.appState = appState
+        self.settingsWindowController = SettingsWindowController(appState: appState)
+        self.onboardingWindowController = OnboardingWindowController(appState: appState)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
@@ -52,6 +140,14 @@ class StatusBarController: NSObject, ObservableObject {
                 }
             }
         }
+
+        // Observe settings notification from gear button
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(openSettings),
+            name: .openSettings,
+            object: nil
+        )
     }
 
     func updateIcon(percentage: Double, isLoading: Bool) {
@@ -78,7 +174,6 @@ class StatusBarController: NSObject, ObservableObject {
             if popover.isShown {
                 popover.performClose(nil)
             } else {
-                refreshOnLeftClick()
                 if let button = statusItem.button {
                     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                     NSApp.activate(ignoringOtherApps: true)
@@ -88,24 +183,12 @@ class StatusBarController: NSObject, ObservableObject {
     }
 
     @objc private func openSettings() {
-        // Close the popover first
+        // Close popover first
         if popover.isShown {
             popover.performClose(nil)
         }
 
-        // Activate app and open settings
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-
-        // Ensure settings window is in front
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            for window in NSApp.windows {
-                if window.title.contains("Settings") || window.identifier?.rawValue.contains("settings") == true {
-                    window.makeKeyAndOrderFront(nil)
-                    window.orderFrontRegardless()
-                }
-            }
-        }
+        settingsWindowController?.showSettings()
     }
 
     @objc private func clearCache() {
@@ -116,12 +199,8 @@ class StatusBarController: NSObject, ObservableObject {
         NSApp.terminate(nil)
     }
 
-    /// Triggers a refresh when the status bar icon is clicked.
-    private func refreshOnLeftClick() {
-        guard let appState = appState, !appState.isLoading else { return }
-        Task { @MainActor in
-            await appState.refresh()
-        }
+    func showOnboarding() {
+        onboardingWindowController?.showOnboarding()
     }
 
     func cleanup() {

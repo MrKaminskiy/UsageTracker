@@ -43,4 +43,49 @@ actor CodexProvider {
             status: .error("Not implemented")
         )
     }
+
+    private func needsRefresh(_ expiresAt: Double?) -> Bool {
+        guard let expiresAt = expiresAt else { return true }
+        let now = Date().timeIntervalSince1970
+        let bufferSeconds: Double = 5 * 60 // 5 minutes
+        return now + bufferSeconds >= expiresAt
+    }
+
+    private func refreshTokenRequest(_ refreshToken: String) async throws -> (accessToken: String, expiresAt: Double)? {
+        var request = URLRequest(url: refreshURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+
+        let body: [String: String] = [
+            "grant_type": "refresh_token",
+            "client_id": clientID,
+            "refresh_token": refreshToken
+        ]
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            return nil
+        }
+
+        struct RefreshResponse: Codable {
+            var access_token: String?
+            var expires_in: Double?
+        }
+
+        let refreshResponse = try JSONDecoder().decode(RefreshResponse.self, from: data)
+
+        guard let token = refreshResponse.access_token else { return nil }
+
+        let expiresAt = Date().timeIntervalSince1970 + (refreshResponse.expires_in ?? 3600)
+        return (token, expiresAt)
+    }
+
+    private func saveAuth(_ auth: AuthFile) {
+        guard let data = try? JSONEncoder().encode(auth) else { return }
+        FileManager.default.createFile(atPath: authPath, contents: data)
+    }
 }

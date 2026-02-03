@@ -60,6 +60,20 @@ struct Provider: Identifiable, Equatable {
 }
 
 struct AppConfig: Codable {
-    var refreshIntervalMinutes: Int = 15
+    var refreshIntervalMinutes: Int = 10
     var launchAtLogin: Bool = false
+    var hideNotConnected: Bool = true
+    var enabledProviders: [String: Bool] = [
+        "claude": true,
+        "cursor": true,
+        "codex": true,
+        "elevenlabs": true,
+        "stability": true,
+        "runway": true,
+        "openai": true
+    ]
+
+    func isProviderEnabled(_ id: String) -> Bool {
+        enabledProviders[id] ?? true
+    }
 }

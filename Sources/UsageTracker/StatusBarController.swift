@@ -7,8 +7,12 @@ class StatusBarController: NSObject, ObservableObject {
     private var popover: NSPopover!
     private var contextMenu: NSMenu!
     private var eventMonitor: Any?
+    private weak var appState: AppState?
+    var onClearCache: (() -> Void)?
 
-    func setup(with contentView: some View) {
+    /// Initializes the status bar UI and click handlers.
+    func setup(with contentView: some View, appState: AppState) {
+        self.appState = appState
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
@@ -26,13 +30,17 @@ class StatusBarController: NSObject, ObservableObject {
         // Create right-click context menu
         contextMenu = NSMenu()
 
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: "")
         settingsItem.target = self
         contextMenu.addItem(settingsItem)
 
+        let clearCacheItem = NSMenuItem(title: "Clear Cache", action: #selector(clearCache), keyEquivalent: "")
+        clearCacheItem.target = self
+        contextMenu.addItem(clearCacheItem)
+
         contextMenu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit UsageTracker", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit UsageTracker", action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
         contextMenu.addItem(quitItem)
 
@@ -70,6 +78,7 @@ class StatusBarController: NSObject, ObservableObject {
             if popover.isShown {
                 popover.performClose(nil)
             } else {
+                refreshOnLeftClick()
                 if let button = statusItem.button {
                     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                     NSApp.activate(ignoringOtherApps: true)
@@ -79,12 +88,40 @@ class StatusBarController: NSObject, ObservableObject {
     }
 
     @objc private func openSettings() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        // Close the popover first
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+
+        // Activate app and open settings
         NSApp.activate(ignoringOtherApps: true)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+
+        // Ensure settings window is in front
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            for window in NSApp.windows {
+                if window.title.contains("Settings") || window.identifier?.rawValue.contains("settings") == true {
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                }
+            }
+        }
+    }
+
+    @objc private func clearCache() {
+        onClearCache?()
     }
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    /// Triggers a refresh when the status bar icon is clicked.
+    private func refreshOnLeftClick() {
+        guard let appState = appState, !appState.isLoading else { return }
+        Task { @MainActor in
+            await appState.refresh()
+        }
     }
 
     func cleanup() {

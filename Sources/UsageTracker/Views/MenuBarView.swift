@@ -31,7 +31,7 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if appState.providers.isEmpty && !appState.isLoading {
+            if appState.visibleProviders.isEmpty && !appState.isLoading {
                 emptyState
             } else {
                 providerList
@@ -75,8 +75,10 @@ struct MenuBarView: View {
 
     private var providerList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach($appState.providers) { $provider in
-                ProviderRow(provider: $provider)
+            ForEach(appState.visibleProviders) { provider in
+                if let index = appState.providers.firstIndex(where: { $0.id == provider.id }) {
+                    ProviderRow(provider: $appState.providers[index])
+                }
             }
         }
     }

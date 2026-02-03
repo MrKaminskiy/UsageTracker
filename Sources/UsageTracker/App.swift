@@ -20,8 +20,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusBarController = StatusBarController()
-        statusBarController.setup(with: MenuBarView(appState: appState))
+        statusBarController.setup(with: MenuBarView(appState: appState), appState: appState)
         statusBarController.updateIcon(percentage: appState.maxPercentage, isLoading: appState.isLoading)
+        statusBarController.onClearCache = { [weak self] in
+            self?.appState.clearCache()
+        }
 
         // Observe changes to update icon
         appState.$providers
@@ -160,5 +163,52 @@ class AppState: ObservableObject {
         config.refreshIntervalMinutes = minutes
         saveConfig()
         setupRefreshTimer()
+    }
+
+    func updateHideNotConnected(_ hide: Bool) {
+        config.hideNotConnected = hide
+        saveConfig()
+    }
+
+    func updateProviderEnabled(_ id: String, enabled: Bool) {
+        config.enabledProviders[id] = enabled
+        saveConfig()
+    }
+
+    var visibleProviders: [Provider] {
+        providers.filter { provider in
+            // Check if provider is enabled in settings
+            guard config.isProviderEnabled(provider.id) else { return false }
+
+            // Check if we should hide not-connected providers
+            if config.hideNotConnected {
+                if case .notConnected = provider.status {
+                    return false
+                }
+            }
+
+            return true
+        }
+    }
+
+    func clearCache() {
+        // Clear URL cache
+        URLCache.shared.removeAllCachedResponses()
+
+        // Clear any stored cookies for API endpoints
+        if let cookies = HTTPCookieStorage.shared.cookies {
+            for cookie in cookies {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+            }
+        }
+
+        // Reset providers to trigger fresh fetch
+        providers = []
+        lastUpdated = nil
+
+        // Refresh
+        Task {
+            await refresh()
+        }
     }
 }

@@ -27,7 +27,6 @@ class AppState: ObservableObject {
 
     private let claudeProvider = ClaudeProvider()
     private let cursorProvider = CursorProvider()
-    private let codexProvider = CodexProvider()
     private let extensionServer = ExtensionServer()
     private var chatgptProvider: ExtensionProvider?
     private var refreshTimer: Timer?
@@ -46,7 +45,7 @@ class AppState: ObservableObject {
         chatgptProvider = ExtensionProvider(
             server: extensionServer,
             id: "chatgpt",
-            name: "ChatGPT",
+            name: "ChatGPT / Codex",
             icon: "bubble.left.fill",
             dashboardURL: URL(string: "https://chatgpt.com/")!
         )
@@ -63,11 +62,9 @@ class AppState: ObservableObject {
         // Fetch from all providers concurrently
         async let claudeResult = claudeProvider.fetchUsage()
         async let cursorResult = cursorProvider.fetchUsage()
-        async let codexResult = codexProvider.fetchUsage()
 
         let claude = try? await claudeResult
         let cursor = try? await cursorResult
-        let codex = try? await codexResult
         let chatgpt = await chatgptProvider?.fetchUsage()
 
         var newProviders: [Provider] = []
@@ -78,10 +75,6 @@ class AppState: ObservableObject {
 
         if let cursor = cursor {
             newProviders.append(cursor)
-        }
-
-        if let codex = codex {
-            newProviders.append(codex)
         }
 
         if let chatgpt = chatgpt {

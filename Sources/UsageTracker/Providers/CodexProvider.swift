@@ -45,10 +45,10 @@ actor CodexProvider {
     }
 
     func fetchUsage() async throws -> Provider {
-        // Read auth file
+        // Check if auth file exists (means user has logged in to Codex)
         guard let authData = FileManager.default.contents(atPath: authPath),
-              var auth = try? JSONDecoder().decode(AuthFile.self, from: authData),
-              var accessToken = auth.tokens?.accessToken else {
+              let auth = try? JSONDecoder().decode(AuthFile.self, from: authData),
+              auth.tokens?.accessToken != nil else {
             return Provider(
                 id: "codex",
                 name: "Codex",
@@ -58,78 +58,15 @@ actor CodexProvider {
             )
         }
 
-        // Refresh if needed
-        let lastRefreshTime = parseISO8601(auth.lastRefresh)
-        if needsRefresh(lastRefreshTime), let refreshToken = auth.tokens?.refreshToken {
-            if let refreshed = try? await refreshTokenRequest(refreshToken) {
-                accessToken = refreshed.accessToken
-                auth.tokens?.accessToken = refreshed.accessToken
-                auth.lastRefresh = ISO8601DateFormatter().string(from: Date())
-                saveAuth(auth)
-            }
-        }
-
-        // Fetch usage
-        var request = URLRequest(url: usageURL)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 10
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            return Provider(
-                id: "codex",
-                name: "Codex",
-                icon: "terminal.fill",
-                items: [],
-                status: .error("Invalid response")
-            )
-        }
-
-        if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-            return Provider(
-                id: "codex",
-                name: "Codex",
-                icon: "terminal.fill",
-                items: [],
-                status: .error("Token expired. Run `codex login`")
-            )
-        }
-
-        guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
-            return Provider(
-                id: "codex",
-                name: "Codex",
-                icon: "terminal.fill",
-                items: [],
-                status: .error("HTTP \(httpResponse.statusCode)")
-            )
-        }
-
-        let usage = try JSONDecoder().decode(UsageResponse.self, from: data)
-
-        var items: [UsageItem] = []
-
-        if let usageData = usage.data,
-           let total = usageData.totalUsageUsd,
-           let limit = usageData.hardLimitUsd ?? usageData.softLimitUsd,
-           limit > 0 {
-            let percentage = (total / limit) * 100
-            items.append(UsageItem(
-                label: "Usage",
-                current: percentage,
-                limit: 100,
-                resetLabel: nil
-            ))
-        }
-
+        // Codex uses ChatGPT Plus subscription - usage is shared with ChatGPT
+        // The ChatGPT API is protected by Cloudflare, so we show "Connected" status
+        // with a link to view usage on the web
         return Provider(
             id: "codex",
             name: "Codex",
             icon: "terminal.fill",
-            items: items,
-            status: items.isEmpty ? .error("No usage data") : .loaded
+            items: [],
+            status: .notConnected(url: URL(string: "https://chatgpt.com/#settings/Profile")!)
         )
     }
 

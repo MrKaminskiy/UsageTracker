@@ -29,9 +29,6 @@ class AppState: ObservableObject {
     private let cursorProvider = CursorProvider()
     private let codexProvider = CodexProvider()
     private let elevenLabsProvider = ElevenLabsProvider()
-    private let extensionServer = ExtensionServer()
-    private var chatgptProvider: ExtensionProvider?
-    private var sunoProvider: ExtensionProvider?
     private var refreshTimer: Timer?
 
     var maxPercentage: Double {
@@ -41,29 +38,6 @@ class AppState: ObservableObject {
     init() {
         loadConfig()
         setupRefreshTimer()
-        setupExtensionServer()
-    }
-
-    private func setupExtensionServer() {
-        chatgptProvider = ExtensionProvider(
-            server: extensionServer,
-            id: "chatgpt",
-            name: "ChatGPT",
-            icon: "bubble.left.fill",
-            dashboardURL: URL(string: "https://chatgpt.com/")!
-        )
-
-        sunoProvider = ExtensionProvider(
-            server: extensionServer,
-            id: "suno",
-            name: "Suno",
-            icon: "music.note",
-            dashboardURL: URL(string: "https://suno.com/")!
-        )
-
-        Task {
-            try? await extensionServer.start()
-        }
     }
 
     func refresh() async {
@@ -80,8 +54,6 @@ class AppState: ObservableObject {
         let cursor = try? await cursorResult
         let codex = try? await codexResult
         let elevenLabs = try? await elevenLabsResult
-        let chatgpt = await chatgptProvider?.fetchUsage()
-        let suno = await sunoProvider?.fetchUsage()
 
         var newProviders: [Provider] = []
 
@@ -99,14 +71,6 @@ class AppState: ObservableObject {
 
         if let elevenLabs = elevenLabs {
             newProviders.append(elevenLabs)
-        }
-
-        if let suno = suno {
-            newProviders.append(suno)
-        }
-
-        if let chatgpt = chatgpt {
-            newProviders.append(chatgpt)
         }
 
         providers = newProviders

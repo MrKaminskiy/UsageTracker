@@ -95,24 +95,6 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
-
-                HStack {
-                    Image(systemName: "music.note")
-                    Text("Suno")
-                    Spacer()
-                    Text("via browser extension")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-
-                HStack {
-                    Image(systemName: "bubble.left.fill")
-                    Text("ChatGPT")
-                    Spacer()
-                    Text("via browser extension")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
             }
 
             Section("About") {

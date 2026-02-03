@@ -1,29 +1,38 @@
-import XCTest
+import Testing
 @testable import UsageTracker
 
-final class ModelsTests: XCTestCase {
+@Suite("UsageItem Tests")
+struct UsageItemTests {
 
-    func testUsageItemPercentage() {
+    @Test("Percentage calculation")
+    func usageItemPercentage() {
         let item = UsageItem(label: "Test", current: 25, limit: 100, resetLabel: nil)
-        XCTAssertEqual(item.percentage, 25.0)
+        #expect(item.percentage == 25.0)
     }
 
-    func testUsageItemPercentageZeroLimit() {
+    @Test("Zero limit returns zero percentage")
+    func usageItemPercentageZeroLimit() {
         let item = UsageItem(label: "Test", current: 10, limit: 0, resetLabel: nil)
-        XCTAssertEqual(item.percentage, 0.0)
+        #expect(item.percentage == 0.0)
     }
 
-    func testUsageItemColor() {
+    @Test("Color based on percentage")
+    func usageItemColor() {
         let low = UsageItem(label: "Low", current: 30, limit: 100, resetLabel: nil)
         let mid = UsageItem(label: "Mid", current: 65, limit: 100, resetLabel: nil)
         let high = UsageItem(label: "High", current: 85, limit: 100, resetLabel: nil)
 
-        XCTAssertEqual(low.color, .green)
-        XCTAssertEqual(mid.color, .yellow)
-        XCTAssertEqual(high.color, .red)
+        #expect(low.color == .green)
+        #expect(mid.color == .yellow)
+        #expect(high.color == .red)
     }
+}
 
-    func testProviderMaxPercentage() {
+@Suite("Provider Tests")
+struct ProviderTests {
+
+    @Test("Max percentage from items")
+    func providerMaxPercentage() {
         let provider = Provider(
             id: "test",
             name: "Test",
@@ -34,11 +43,12 @@ final class ModelsTests: XCTestCase {
             ],
             status: .loaded
         )
-        XCTAssertEqual(provider.maxPercentage, 80.0)
+        #expect(provider.maxPercentage == 80.0)
     }
 
-    func testProviderEmptyItems() {
+    @Test("Empty items returns zero")
+    func providerEmptyItems() {
         let provider = Provider(id: "test", name: "Test", icon: "star", items: [], status: .loaded)
-        XCTAssertEqual(provider.maxPercentage, 0.0)
+        #expect(provider.maxPercentage == 0.0)
     }
 }

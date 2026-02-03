@@ -29,6 +29,9 @@ class AppState: ObservableObject {
     private let cursorProvider = CursorProvider()
     private let codexProvider = CodexProvider()
     private let elevenLabsProvider = ElevenLabsProvider()
+    private let stabilityProvider = StabilityProvider()
+    private let runwayProvider = RunwayProvider()
+    private let openAIProvider = OpenAIProvider()
     private var refreshTimer: Timer?
 
     var maxPercentage: Double {
@@ -49,11 +52,17 @@ class AppState: ObservableObject {
         async let cursorResult = cursorProvider.fetchUsage()
         async let codexResult = codexProvider.fetchUsage()
         async let elevenLabsResult = elevenLabsProvider.fetchUsage()
+        async let stabilityResult = stabilityProvider.fetchUsage()
+        async let runwayResult = runwayProvider.fetchUsage()
+        async let openAIResult = openAIProvider.fetchUsage()
 
         let claude = try? await claudeResult
         let cursor = try? await cursorResult
         let codex = try? await codexResult
         let elevenLabs = try? await elevenLabsResult
+        let stability = try? await stabilityResult
+        let runway = try? await runwayResult
+        let openAI = try? await openAIResult
 
         var newProviders: [Provider] = []
 
@@ -71,6 +80,18 @@ class AppState: ObservableObject {
 
         if let elevenLabs = elevenLabs {
             newProviders.append(elevenLabs)
+        }
+
+        if let stability = stability {
+            newProviders.append(stability)
+        }
+
+        if let runway = runway {
+            newProviders.append(runway)
+        }
+
+        if let openAI = openAI {
+            newProviders.append(openAI)
         }
 
         providers = newProviders

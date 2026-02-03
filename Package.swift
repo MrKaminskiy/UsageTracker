@@ -9,7 +9,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "UsageTracker",
-            path: "Sources/UsageTracker"
+            path: "Sources/UsageTracker",
+            resources: [
+                .copy("Resources/DefaultPlugins")
+            ]
         ),
         .testTarget(
             name: "UsageTrackerTests",

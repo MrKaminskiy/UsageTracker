@@ -27,6 +27,7 @@ class AppState: ObservableObject {
 
     private let claudeProvider = ClaudeProvider()
     private let cursorProvider = CursorProvider()
+    private let codexProvider = CodexProvider()
     private var refreshTimer: Timer?
 
     var maxPercentage: Double {
@@ -45,9 +46,11 @@ class AppState: ObservableObject {
         // Fetch from all providers concurrently
         async let claudeResult = claudeProvider.fetchUsage()
         async let cursorResult = cursorProvider.fetchUsage()
+        async let codexResult = codexProvider.fetchUsage()
 
         let claude = try? await claudeResult
         let cursor = try? await cursorResult
+        let codex = try? await codexResult
 
         var newProviders: [Provider] = []
 
@@ -57,6 +60,10 @@ class AppState: ObservableObject {
 
         if let cursor = cursor {
             newProviders.append(cursor)
+        }
+
+        if let codex = codex {
+            newProviders.append(codex)
         }
 
         providers = newProviders

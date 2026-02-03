@@ -9,6 +9,7 @@
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
+    "https://suno.com/*",
     "http://localhost:19284/*"
   ],
   "background": {
@@ -17,7 +18,12 @@
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["content.js"],
+      "js": ["content-chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://suno.com/*"],
+      "js": ["content-suno.js"],
       "run_at": "document_idle"
     }
   ],

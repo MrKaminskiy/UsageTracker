@@ -10,7 +10,7 @@ actor CodexProvider {
 
     struct AuthFile: Codable {
         var tokens: Tokens?
-        var lastRefresh: Double?
+        var lastRefresh: String?
 
         enum CodingKeys: String, CodingKey {
             case tokens
@@ -59,11 +59,12 @@ actor CodexProvider {
         }
 
         // Refresh if needed
-        if needsRefresh(auth.lastRefresh), let refreshToken = auth.tokens?.refreshToken {
+        let lastRefreshTime = parseISO8601(auth.lastRefresh)
+        if needsRefresh(lastRefreshTime), let refreshToken = auth.tokens?.refreshToken {
             if let refreshed = try? await refreshTokenRequest(refreshToken) {
                 accessToken = refreshed.accessToken
                 auth.tokens?.accessToken = refreshed.accessToken
-                auth.lastRefresh = Date().timeIntervalSince1970
+                auth.lastRefresh = ISO8601DateFormatter().string(from: Date())
                 saveAuth(auth)
             }
         }
@@ -130,6 +131,18 @@ actor CodexProvider {
             items: items,
             status: items.isEmpty ? .error("No usage data") : .loaded
         )
+    }
+
+    private func parseISO8601(_ string: String?) -> Double? {
+        guard let string = string else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: string) {
+            return date.timeIntervalSince1970
+        }
+        // Try without fractional seconds
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: string)?.timeIntervalSince1970
     }
 
     private func needsRefresh(_ lastRefresh: Double?) -> Bool {

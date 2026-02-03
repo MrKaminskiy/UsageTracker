@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 200px;
+      padding: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .dot.connected { background: #34c759; }
+    .dot.disconnected { background: #ff3b30; }
+    .info {
+      color: #666;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="status">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusText">Checking...</span>
+  </div>
+  <p class="info">
+    This extension sends usage data from AI services to the UsageTracker menu bar app.
+  </p>
+  <script src="popup.js"></script>
+</body>
+</html>

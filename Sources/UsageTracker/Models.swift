@@ -59,11 +59,17 @@ struct Provider: Identifiable, Equatable {
     }
 }
 
+struct PinnedItem: Codable, Equatable {
+    var providerId: String
+    var itemLabel: String
+}
+
 struct AppConfig: Codable {
     var refreshIntervalMinutes: Int = 10
     var launchAtLogin: Bool = false
     var hideNotConnected: Bool = true
     var hasCompletedOnboarding: Bool = false
+    var pinnedItem: PinnedItem? = nil
     var enabledProviders: [String: Bool] = [
         "claude": true,
         "cursor": true,

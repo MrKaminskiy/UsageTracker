@@ -10,3 +10,7 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Dev runtime
+.usagetracker.pid
+.usagetracker.log

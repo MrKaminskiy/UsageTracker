@@ -31,12 +31,11 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         newWindow.center()
         newWindow.delegate = self
         newWindow.isReleasedWhenClosed = false
-        newWindow.level = .floating
 
         self.window = newWindow
 
-        newWindow.orderFrontRegardless()
-        newWindow.makeKey()
+        newWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -73,12 +72,11 @@ class OnboardingWindowController: NSObject, NSWindowDelegate {
         newWindow.center()
         newWindow.delegate = self
         newWindow.isReleasedWhenClosed = false
-        newWindow.level = .floating
 
         self.window = newWindow
 
-        newWindow.orderFrontRegardless()
-        newWindow.makeKey()
+        newWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func windowWillClose(_ notification: Notification) {

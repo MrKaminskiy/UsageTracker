@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.info("UsageTracker started")
         statusBarController = StatusBarController()
         statusBarController.setup(with: MenuBarView(appState: appState), appState: appState)
         statusBarController.updateIcon(percentage: appState.maxPercentage, isLoading: appState.isLoading)
@@ -28,9 +29,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Observe changes to update icon
         appState.$providers
-            .combineLatest(appState.$isLoading)
+            .combineLatest(appState.$isLoading, appState.$config)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, isLoading in
+            .sink { [weak self] _, isLoading, _ in
                 guard let self = self else { return }
                 self.statusBarController.updateIcon(percentage: self.appState.maxPercentage, isLoading: isLoading)
             }
@@ -48,6 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        Log.info("UsageTracker stopping")
         statusBarController.cleanup()
     }
 }
@@ -69,7 +71,35 @@ class AppState: ObservableObject {
     private var refreshTimer: Timer?
 
     var maxPercentage: Double {
-        providers.map(\.maxPercentage).max() ?? 0
+        // If there's a pinned item, use its percentage
+        if let pinned = config.pinnedItem,
+           let provider = visibleProviders.first(where: { $0.id == pinned.providerId }),
+           let item = provider.items.first(where: { $0.label == pinned.itemLabel }) {
+            return item.percentage
+        }
+        // Otherwise use the max across all visible providers
+        return visibleProviders.map(\.maxPercentage).max() ?? 0
+    }
+
+    var pinnedItem: PinnedItem? {
+        config.pinnedItem
+    }
+
+    func togglePin(providerId: String, itemLabel: String) {
+        if let current = config.pinnedItem,
+           current.providerId == providerId && current.itemLabel == itemLabel {
+            // Unpin if already pinned
+            config.pinnedItem = nil
+        } else {
+            // Pin this item
+            config.pinnedItem = PinnedItem(providerId: providerId, itemLabel: itemLabel)
+        }
+        saveConfig()
+    }
+
+    func isPinned(providerId: String, itemLabel: String) -> Bool {
+        guard let pinned = config.pinnedItem else { return false }
+        return pinned.providerId == providerId && pinned.itemLabel == itemLabel
     }
 
     init() {
@@ -78,6 +108,7 @@ class AppState: ObservableObject {
     }
 
     func refresh() async {
+        Log.info("Refreshing providers...")
         isLoading = true
         defer { isLoading = false }
 
@@ -100,35 +131,31 @@ class AppState: ObservableObject {
 
         var newProviders: [Provider] = []
 
-        if let claude = claude {
-            newProviders.append(claude)
-        }
+        let results: [(String, Provider?)] = [
+            ("Claude", claude), ("Cursor", cursor), ("Codex", codex),
+            ("ElevenLabs", elevenLabs), ("Stability", stability),
+            ("Runway", runway), ("OpenAI", openAI)
+        ]
 
-        if let cursor = cursor {
-            newProviders.append(cursor)
-        }
-
-        if let codex = codex {
-            newProviders.append(codex)
-        }
-
-        if let elevenLabs = elevenLabs {
-            newProviders.append(elevenLabs)
-        }
-
-        if let stability = stability {
-            newProviders.append(stability)
-        }
-
-        if let runway = runway {
-            newProviders.append(runway)
-        }
-
-        if let openAI = openAI {
-            newProviders.append(openAI)
+        for (name, provider) in results {
+            if let provider = provider {
+                newProviders.append(provider)
+                switch provider.status {
+                case .loaded:
+                    let items = provider.items.map { "\($0.label): \(Int($0.percentage))%" }.joined(separator: ", ")
+                    Log.info("  \(name): \(items)")
+                case .notConnected:
+                    Log.info("  \(name): not connected")
+                case .error(let msg):
+                    Log.error("  \(name): \(msg)")
+                case .loading:
+                    break
+                }
+            }
         }
 
         providers = newProviders
+        Log.info("Refresh complete — \(newProviders.count) providers loaded")
         lastUpdated = Date()
     }
 
@@ -157,6 +184,7 @@ class AppState: ObservableObject {
     private func setupRefreshTimer() {
         refreshTimer?.invalidate()
         let interval = TimeInterval(config.refreshIntervalMinutes * 60)
+        Log.info("Refresh timer set to \(config.refreshIntervalMinutes)min")
         refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.refresh()
@@ -214,6 +242,7 @@ class AppState: ObservableObject {
     }
 
     func clearCache() {
+        Log.info("Clearing cache...")
         // Clear URL cache
         URLCache.shared.removeAllCachedResponses()
 

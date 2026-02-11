@@ -77,13 +77,27 @@ struct MenuBarView: View {
         appState.visibleProviders.max(by: { $0.maxPercentage < $1.maxPercentage })
     }
 
+    private var displayedProvider: Provider? {
+        // If pinned, return that provider; otherwise return max
+        if let pinned = appState.pinnedItem {
+            return appState.visibleProviders.first { $0.id == pinned.providerId }
+        }
+        return maxProvider
+    }
+
     private var providerList: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(appState.visibleProviders) { provider in
                 if let index = appState.providers.firstIndex(where: { $0.id == provider.id }) {
                     ProviderRow(
                         provider: $appState.providers[index],
-                        isDisplayedInBar: provider.id == maxProvider?.id && provider.maxPercentage > 0
+                        isDisplayedInBar: provider.id == displayedProvider?.id && appState.maxPercentage > 0,
+                        isPinned: { itemLabel in
+                            appState.isPinned(providerId: provider.id, itemLabel: itemLabel)
+                        },
+                        onTogglePin: { itemLabel in
+                            appState.togglePin(providerId: provider.id, itemLabel: itemLabel)
+                        }
                     )
                 }
             }

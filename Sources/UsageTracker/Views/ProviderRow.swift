@@ -3,6 +3,8 @@ import SwiftUI
 struct ProviderRow: View {
     @Binding var provider: Provider
     var isDisplayedInBar: Bool = false
+    var isPinned: (String) -> Bool = { _ in false }
+    var onTogglePin: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,15 +25,21 @@ struct ProviderRow: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 10)
             } else if provider.isExpanded && !provider.items.isEmpty {
-                // Find the first item with max percentage
+                // Find the first item with max percentage (used when nothing is pinned)
                 let maxItemId = provider.items.max(by: { $0.percentage < $1.percentage })?.id
+                let hasPinnedItem = provider.items.contains { isPinned($0.label) }
 
                 // Inset content area
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(provider.items) { item in
+                        let itemIsPinned = isPinned(item.label)
+                        // Show green dot if: pinned, OR (no pin anywhere AND this is max in displayed provider)
+                        let showDot = itemIsPinned || (!hasPinnedItem && isDisplayedInBar && item.id == maxItemId)
                         UsageItemRow(
                             item: item,
-                            isDisplayedInBar: isDisplayedInBar && item.id == maxItemId
+                            isDisplayedInBar: showDot,
+                            isPinned: itemIsPinned,
+                            onTap: { onTogglePin?(item.label) }
                         )
                     }
                 }
@@ -103,14 +111,26 @@ struct ProviderRow: View {
 struct UsageItemRow: View {
     let item: UsageItem
     var isDisplayedInBar: Bool = false
+    var isPinned: Bool = false
+    var onTap: (() -> Void)? = nil
+
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: 0) {
-                Circle()
-                    .fill(isDisplayedInBar ? Color.green : Color.clear)
-                    .frame(width: 5, height: 5)
-                    .padding(.trailing, 6)
+                ZStack {
+                    Circle()
+                        .fill(isDisplayedInBar ? Color.green : Color.clear)
+                        .frame(width: 5, height: 5)
+                    if isPinned {
+                        Circle()
+                            .stroke(Color.green, lineWidth: 1)
+                            .frame(width: 8, height: 8)
+                    }
+                }
+                .frame(width: 8, height: 8)
+                .padding(.trailing, 4)
 
                 Text(item.label)
                     .font(.system(size: 11))
@@ -167,6 +187,18 @@ struct UsageItemRow: View {
             }
         }
         .padding(.leading, 24)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .onTapGesture {
+            onTap?()
+        }
     }
 }
 

@@ -175,6 +175,9 @@ class StatusBarController: NSObject, ObservableObject {
                 if let button = statusItem.button {
                     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                     NSApp.activate(ignoringOtherApps: true)
+                    Task {
+                        await appState?.refresh()
+                    }
                 }
             }
         }

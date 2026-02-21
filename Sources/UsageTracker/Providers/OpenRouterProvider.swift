@@ -117,13 +117,6 @@ actor OpenRouterProvider {
             ))
         }
 
-        items.append(UsageItem(
-            label: "Remaining",
-            current: 0,
-            limit: 0,
-            resetLabel: String(format: "$%.2f", max(remaining, 0))
-        ))
-
         return Provider(id: "openrouter", name: "OpenRouter", icon: "arrow.trianglehead.branch", items: items, status: .loaded)
     }
 

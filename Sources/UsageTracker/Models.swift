@@ -77,7 +77,8 @@ struct AppConfig: Codable {
         "elevenlabs": true,
         "stability": true,
         "runway": true,
-        "openai": true
+        "openai": true,
+        "openrouter": true
     ]
     var providerOrder: [String] = [
         "claude",
@@ -86,7 +87,8 @@ struct AppConfig: Codable {
         "elevenlabs",
         "stability",
         "runway",
-        "openai"
+        "openai",
+        "openrouter"
     ]
 
     func isProviderEnabled(_ id: String) -> Bool {

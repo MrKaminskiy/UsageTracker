@@ -68,6 +68,7 @@ class AppState: ObservableObject {
     private let stabilityProvider = StabilityProvider()
     private let runwayProvider = RunwayProvider()
     private let openAIProvider = OpenAIProvider()
+    private let openRouterProvider = OpenRouterProvider()
     private var refreshTimer: Timer?
 
     var maxPercentage: Double {
@@ -120,6 +121,7 @@ class AppState: ObservableObject {
         async let stabilityResult = stabilityProvider.fetchUsage()
         async let runwayResult = runwayProvider.fetchUsage()
         async let openAIResult = openAIProvider.fetchUsage()
+        async let openRouterResult = openRouterProvider.fetchUsage()
 
         let claude = try? await claudeResult
         let cursor = try? await cursorResult
@@ -128,13 +130,14 @@ class AppState: ObservableObject {
         let stability = try? await stabilityResult
         let runway = try? await runwayResult
         let openAI = try? await openAIResult
+        let openRouter = try? await openRouterResult
 
         var newProviders: [Provider] = []
 
         let results: [(String, Provider?)] = [
             ("Claude", claude), ("Cursor", cursor), ("Codex", codex),
             ("ElevenLabs", elevenLabs), ("Stability", stability),
-            ("Runway", runway), ("OpenAI", openAI)
+            ("Runway", runway), ("OpenAI", openAI), ("OpenRouter", openRouter)
         ]
 
         for (name, provider) in results {

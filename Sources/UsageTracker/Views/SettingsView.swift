@@ -16,6 +16,8 @@ struct SettingsView: View {
     @State private var runwaySaved: Bool = false
     @State private var openAIKey: String = ""
     @State private var openAISaved: Bool = false
+    @State private var openRouterKey: String = ""
+    @State private var openRouterSaved: Bool = false
 
     private let configDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".usagetracker")
@@ -106,6 +108,22 @@ struct SettingsView: View {
                     saved: $openAISaved,
                     onSave: { saveKey("openai", openAIKey) },
                     validateKey: validateOpenAIKey
+                )
+            ),
+            "openrouter": ProviderSettingsItem(
+                id: "openrouter",
+                icon: "arrow.trianglehead.branch",
+                name: "OpenRouter",
+                hint: "API key required",
+                keyConfig: ProviderKeyConfig(
+                    placeholder: "API key",
+                    hint: "openrouter.ai/settings/keys",
+                    linkTitle: "Get key",
+                    linkURL: URL(string: "https://openrouter.ai/settings/keys"),
+                    key: $openRouterKey,
+                    saved: $openRouterSaved,
+                    onSave: { saveKey("openrouter", openRouterKey) },
+                    validateKey: validateOpenRouterKey
                 )
             )
         ]
@@ -215,6 +233,9 @@ struct SettingsView: View {
 
         openAIKey = loadKey("openai") ?? ""
         openAISaved = !openAIKey.isEmpty
+
+        openRouterKey = loadKey("openrouter") ?? ""
+        openRouterSaved = !openRouterKey.isEmpty
     }
 
     /// Loads a single API key from the config directory.
@@ -243,6 +264,7 @@ struct SettingsView: View {
             case "stability": stabilitySaved = true
             case "runway": runwaySaved = true
             case "openai": openAISaved = true
+            case "openrouter": openRouterSaved = true
             default: break
             }
 
@@ -299,6 +321,25 @@ struct SettingsView: View {
             return (true, nil)
         }
         return (false, "Key should start with 'key_'")
+    }
+
+    private func validateOpenRouterKey(_ key: String) async -> (Bool, String?) {
+        let url = URL(string: "https://openrouter.ai/api/v1/key")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 { return (true, nil) }
+                if httpResponse.statusCode == 401 { return (false, "Invalid API key") }
+                return (false, "HTTP \(httpResponse.statusCode)")
+            }
+            return (false, "Invalid response")
+        } catch {
+            return (false, "Connection failed")
+        }
     }
 
     private func validateOpenAIKey(_ key: String) async -> (Bool, String?) {
@@ -648,6 +689,12 @@ struct HelpView: View {
                     iconColor: .red,
                     title: "Runway",
                     description: "Add API key from dev.runwayml.com"
+                )
+                HelpRow(
+                    icon: "arrow.trianglehead.branch",
+                    iconColor: .cyan,
+                    title: "OpenRouter",
+                    description: "Add API key from openrouter.ai/settings/keys"
                 )
             }
 

@@ -1,6 +1,7 @@
 import Foundation
 
 actor OpenRouterProvider {
+    private let creditsURL = URL(string: "https://openrouter.ai/api/v1/credits")!
     private let keyInfoURL = URL(string: "https://openrouter.ai/api/v1/key")!
     private let settingsURL = URL(string: "https://openrouter.ai/settings/keys")!
 
@@ -18,6 +19,20 @@ actor OpenRouterProvider {
 
         enum CodingKeys: String, CodingKey {
             case apiKey = "api_key"
+        }
+    }
+
+    struct CreditsResponse: Codable {
+        var data: CreditsData
+
+        struct CreditsData: Codable {
+            var totalCredits: Double?
+            var totalUsage: Double?
+
+            enum CodingKeys: String, CodingKey {
+                case totalCredits = "total_credits"
+                case totalUsage = "total_usage"
+            }
         }
     }
 
@@ -56,6 +71,63 @@ actor OpenRouterProvider {
             )
         }
 
+        // Try /api/v1/credits first (management key — account-level totals)
+        if let result = try? await fetchCredits(apiKey) {
+            return result
+        }
+
+        // Fall back to /api/v1/key (regular key — per-key usage)
+        return try await fetchKeyUsage(apiKey)
+    }
+
+    private func fetchCredits(_ apiKey: String) async throws -> Provider {
+        var request = URLRequest(url: creditsURL)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let credits = try JSONDecoder().decode(CreditsResponse.self, from: data)
+        let totalCredits = credits.data.totalCredits ?? 0
+        let totalUsage = credits.data.totalUsage ?? 0
+        let remaining = totalCredits - totalUsage
+
+        var items: [UsageItem] = []
+
+        if totalCredits > 0 {
+            let percentage = (totalUsage / totalCredits) * 100
+            items.append(UsageItem(
+                label: "Credits Used",
+                current: percentage,
+                limit: 100,
+                resetLabel: String(format: "$%.2f / $%.2f", totalUsage, totalCredits)
+            ))
+        } else {
+            items.append(UsageItem(
+                label: "Total Usage",
+                current: 0,
+                limit: 0,
+                resetLabel: String(format: "$%.2f", totalUsage)
+            ))
+        }
+
+        items.append(UsageItem(
+            label: "Remaining",
+            current: 0,
+            limit: 0,
+            resetLabel: String(format: "$%.2f", max(remaining, 0))
+        ))
+
+        return Provider(id: "openrouter", name: "OpenRouter", icon: "arrow.trianglehead.branch", items: items, status: .loaded)
+    }
+
+    private func fetchKeyUsage(_ apiKey: String) async throws -> Provider {
         var request = URLRequest(url: keyInfoURL)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

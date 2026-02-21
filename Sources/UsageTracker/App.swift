@@ -167,7 +167,15 @@ class AppState: ObservableObject {
             .appendingPathComponent(".usagetracker/config.json")
 
         if let data = try? Data(contentsOf: configURL),
-           let loaded = try? JSONDecoder().decode(AppConfig.self, from: data) {
+           var loaded = try? JSONDecoder().decode(AppConfig.self, from: data) {
+            // Add any new providers missing from saved config
+            let knownProviders = AppConfig().providerOrder
+            for id in knownProviders where !loaded.providerOrder.contains(id) {
+                loaded.providerOrder.append(id)
+                if loaded.enabledProviders[id] == nil {
+                    loaded.enabledProviders[id] = true
+                }
+            }
             config = loaded
         }
     }

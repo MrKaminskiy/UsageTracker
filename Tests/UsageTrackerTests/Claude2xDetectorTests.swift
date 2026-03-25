@@ -105,4 +105,41 @@ struct Claude2xDetectorTests {
         let detector = Claude2xDetector(config: configAround(monday14))
         #expect(detector.check(at: monday14) == true)
     }
+
+    // MARK: - Status with timing tests
+
+    @Test("Status during peak shows 'in' label")
+    func statusDuringPeak() {
+        // Monday 10am ET, peak is 8-14 → 2x starts at 14:00, so "in 4h 0m"
+        let monday10am = dateET(day: 23, hour: 10)
+        let detector = Claude2xDetector(config: configAround(monday10am))
+        let status = detector.status(at: monday10am)
+        #expect(status?.isActive == false)
+        #expect(status?.nextTransitionLabel?.starts(with: "in ") == true)
+    }
+
+    @Test("Status after peak shows 'ends' label")
+    func statusAfterPeak() {
+        // Monday 15:00 ET, off-peak → active, ends at next peak start
+        let monday15 = dateET(day: 23, hour: 15)
+        let detector = Claude2xDetector(config: configAround(monday15))
+        let status = detector.status(at: monday15)
+        #expect(status?.isActive == true)
+        #expect(status?.nextTransitionLabel?.starts(with: "ends ") == true)
+    }
+
+    @Test("Status on weekend shows 'ends' label")
+    func statusWeekend() {
+        let sunday10am = dateET(day: 22, hour: 10)
+        let detector = Claude2xDetector(config: configAround(sunday10am))
+        let status = detector.status(at: sunday10am)
+        #expect(status?.isActive == true)
+        #expect(status?.nextTransitionLabel?.starts(with: "ends ") == true)
+    }
+
+    @Test("Status nil when no config")
+    func statusNilNoConfig() {
+        let detector = Claude2xDetector(config: nil)
+        #expect(detector.status(at: Date()) == nil)
+    }
 }

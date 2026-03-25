@@ -106,9 +106,16 @@ struct ProviderRow: View {
                 Text(provider.name)
                     .font(.system(size: 13, weight: .medium))
 
-                if provider.is2xActive == true {
-                    Text("\u{26A1}2x")
-                        .font(.system(size: 9, weight: .semibold))
+                if let boost = provider.boostStatus {
+                    if boost.isActive {
+                        HStack(spacing: 3) {
+                            Text("\u{26A1}2x")
+                                .font(.system(size: 9, weight: .semibold))
+                            if let label = boost.nextTransitionLabel {
+                                Text(label)
+                                    .font(.system(size: 8))
+                            }
+                        }
                         .foregroundColor(.white)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -116,6 +123,17 @@ struct ProviderRow: View {
                             Capsule()
                                 .fill(Color.blue)
                         )
+                    } else if let label = boost.nextTransitionLabel {
+                        Text("\u{26A1}2x \(label)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule()
+                                    .strokeBorder(Color.blue.opacity(0.4), lineWidth: 1)
+                            )
+                    }
                 }
 
                 Spacer()

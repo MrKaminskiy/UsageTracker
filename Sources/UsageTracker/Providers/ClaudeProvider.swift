@@ -160,7 +160,7 @@ actor ClaudeProvider {
 
         // 2x detection
         let detector = Claude2xDetector.loadFromDisk()
-        let is2xActive = detector.check()
+        let boostStatus = detector.status()
 
         // Cost estimation
         let costEstimate = await costEstimator.estimateCurrentMonth()
@@ -171,7 +171,7 @@ actor ClaudeProvider {
             icon: "brain",
             items: items,
             status: items.isEmpty ? .error("No usage data") : .loaded,
-            is2xActive: is2xActive,
+            boostStatus: boostStatus,
             costEstimate: costEstimate?.totalCost
         )
     }

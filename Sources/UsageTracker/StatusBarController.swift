@@ -116,18 +116,21 @@ class StatusBarController: NSObject, ObservableObject {
         // Create right-click context menu
         contextMenu = NSMenu()
 
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: "")
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
+        settingsItem.image = NSImage(systemSymbolName: "gear", accessibilityDescription: nil)
         contextMenu.addItem(settingsItem)
 
         let clearCacheItem = NSMenuItem(title: "Clear Cache", action: #selector(clearCache), keyEquivalent: "")
         clearCacheItem.target = self
+        clearCacheItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
         contextMenu.addItem(clearCacheItem)
 
         contextMenu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit UsageTracker", action: #selector(quitApp), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: "Quit UsageTracker", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
+        quitItem.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
         contextMenu.addItem(quitItem)
 
         // Monitor for clicks outside popover to close it

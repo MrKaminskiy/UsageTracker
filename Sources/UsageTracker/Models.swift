@@ -45,6 +45,8 @@ struct Provider: Identifiable, Equatable {
     var items: [UsageItem]
     var status: ProviderStatus
     var isExpanded: Bool = true
+    var is2xActive: Bool? = nil      // nil = no promo configured
+    var costEstimate: Double? = nil   // API cost estimate in dollars
 
     var maxPercentage: Double {
         items.map(\.percentage).max() ?? 0

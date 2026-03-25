@@ -42,6 +42,29 @@ struct ProviderRow: View {
                             onTap: { onTogglePin?(item.label) }
                         )
                     }
+
+                    if let cost = provider.costEstimate {
+                        Divider()
+                            .padding(.vertical, 4)
+
+                        HStack(spacing: 8) {
+                            Text("API cost est.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+
+                            Spacer()
+
+                            Text(Self.formatCost(cost))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(.secondary)
+
+                            Text("this month")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                                .frame(width: 60, alignment: .trailing)
+                        }
+                        .padding(.leading, 24)
+                    }
                 }
                 .padding(.vertical, 8)
                 .padding(.horizontal, 4)
@@ -83,6 +106,18 @@ struct ProviderRow: View {
                 Text(provider.name)
                     .font(.system(size: 13, weight: .medium))
 
+                if provider.is2xActive == true {
+                    Text("\u{26A1}2x")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule()
+                                .fill(Color.blue)
+                        )
+                }
+
                 Spacer()
 
                 switch provider.status {
@@ -105,6 +140,15 @@ struct ProviderRow: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private static func formatCost(_ cost: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: cost)) ?? String(format: "$%.2f", cost)
     }
 }
 

@@ -107,33 +107,25 @@ struct ProviderRow: View {
                     .font(.system(size: 13, weight: .medium))
 
                 if let boost = provider.boostStatus {
-                    if boost.isActive {
-                        HStack(spacing: 3) {
-                            Text("\u{26A1}2x")
-                                .font(.system(size: 9, weight: .semibold))
-                            if let label = boost.nextTransitionLabel {
-                                Text(label)
-                                    .font(.system(size: 8))
-                            }
+                    HStack(spacing: 2) {
+                        Text("2x")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                        if let label = boost.nextTransitionLabel {
+                            Text(label)
+                                .font(.system(size: 8, weight: .medium))
                         }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(
-                            Capsule()
-                                .fill(Color.blue)
-                        )
-                    } else if let label = boost.nextTransitionLabel {
-                        Text("\u{26A1}2x \(label)")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(
-                                Capsule()
-                                    .strokeBorder(Color.blue.opacity(0.4), lineWidth: 1)
-                            )
                     }
+                    .foregroundColor(boost.isActive
+                        ? Color(red: 0.204, green: 0.780, blue: 0.349)  // match app green
+                        : .secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(boost.isActive
+                                ? Color(red: 0.204, green: 0.780, blue: 0.349).opacity(0.12)
+                                : Color.primary.opacity(0.04))
+                    )
                 }
 
                 Spacer()

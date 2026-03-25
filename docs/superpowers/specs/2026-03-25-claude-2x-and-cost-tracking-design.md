@@ -14,21 +14,21 @@ Two new features for the Claude provider in UsageTracker:
 Time-based detection. No API field exists; Anthropic activates the boost silently.
 
 Rules (all times in US Eastern):
-- **Promo window**: configurable start/end dates (current: 2026-03-13 to 2026-03-28)
-- **Weekends**: always 2x
+- **Promo window**: configurable start/end dates. All rules below only apply when the current time is within the promo window. Outside the window, 2x is never active.
+- **Weekends**: always 2x (during promo window)
 - **Weekdays**: 2x when hour < 8 or hour >= 14 ET (peak = 8:00–14:00 ET, no boost)
 
 Implementation: `Sources/UsageTracker/Providers/Claude2xDetector.swift`
 
 ```swift
-struct Claude2xStatus {
-    let isActive: Bool
-}
-
 struct Claude2xDetector {
-    func currentStatus() -> Claude2xStatus
+    /// Returns nil if no promo config exists or current date is outside promo window.
+    /// Returns true/false based on time-of-day rules when within a promo window.
+    func check() -> Bool?
 }
 ```
+
+Returning `nil` means "no promo configured" — the UI hides the badge entirely. Returning `false` means "promo active but currently peak hours" — the UI can still hide the badge (same visual result, but the caller has the distinction if needed later).
 
 ### Configuration
 
@@ -37,10 +37,12 @@ Stored in `~/.usagetracker/claude_2x.json`:
 ```json
 {
   "promoStart": "2026-03-13T00:00:00-05:00",
-  "promoEnd": "2026-03-28T23:59:59-07:00",
+  "promoEnd": "2026-03-29T03:59:59-04:00",
   "peakHoursET": { "start": 8, "end": 14 }
 }
 ```
+
+Note: Late March is after DST switchover (March 8, 2026), so Eastern Daylight Time (EDT = UTC-04:00) applies. Both start and end timestamps must use the correct UTC offset for their respective dates (EST = -05:00 before March 8, EDT = -04:00 after).
 
 User can edit this file to update dates for future promos without rebuilding. If the file doesn't exist, no 2x indicator is shown (no promo active).
 
@@ -54,8 +56,8 @@ Small pill badge in the Claude provider header, next to the name:
 
 - Pill: rounded rectangle, accent color (blue/indigo), small font
 - Contains "⚡2x" text
-- Only visible when 2x is active
-- Hidden entirely when not in a promo period or during peak hours
+- Only visible when `check()` returns `true`
+- Hidden when `check()` returns `nil` (no promo) or `false` (peak hours)
 
 The badge refreshes whenever the provider data refreshes (on the existing timer).
 
@@ -63,7 +65,7 @@ The badge refreshes whenever the provider data refreshes (on the existing timer)
 
 ### Data Source
 
-Parse JSONL session files from `~/.claude/projects/*/*.jsonl` (and nested `subagents/` dirs).
+Parse JSONL session files from `~/.claude/projects/` recursively (`**/*.jsonl`).
 
 Each assistant message in these files contains:
 
@@ -82,9 +84,11 @@ Each assistant message in these files contains:
 }
 ```
 
+Note: The existing `extra_usage` field in the usage API (with `used_credits` and `monthly_limit`) tracks pay-as-you-go spend reported by Anthropic. The JSONL-based estimate complements this by covering all token usage across all models, regardless of billing tier, answering "what would this cost on the API?"
+
 ### Pricing Table
 
-Hardcoded in source, easily updatable:
+Hardcoded in source, easily updatable. Model matching uses **case-insensitive substring** on the `model` field (e.g., model `"claude-opus-4-6"` matches pattern `"opus-4-6"`). First match wins in the order listed:
 
 | Model pattern | Input $/MTok | Output $/MTok | Cache Write $/MTok | Cache Read $/MTok |
 |---|---|---|---|---|
@@ -99,12 +103,10 @@ Unknown models fall back to Sonnet pricing.
 Implementation: `Sources/UsageTracker/Providers/ClaudeCostEstimator.swift`
 
 ```swift
-struct CostEstimate {
-    let totalCost: Double          // total $ this month
-    let costByModel: [String: Double]  // per-model breakdown
-    let tokenCounts: TokenCounts
-    let periodStart: Date          // first day of current month
-    let periodEnd: Date            // now
+struct CostEstimate: Equatable {
+    let totalCost: Double
+    let periodStart: Date
+    let periodEnd: Date
 }
 
 struct TokenCounts {
@@ -119,13 +121,16 @@ actor ClaudeCostEstimator {
 }
 ```
 
+**Lifetime**: `ClaudeCostEstimator` is instantiated once as a stored property of `ClaudeProvider` (same pattern as other dependencies). The actor's in-memory state persists across refreshes, and the file-based cache (`~/.usagetracker/cost_cache.json`) provides persistence across app restarts.
+
 Logic:
-1. Glob all `~/.claude/projects/*/*.jsonl` and `~/.claude/projects/*/subagents/*.jsonl`
+1. Recursively find all `*.jsonl` files under `~/.claude/projects/`
 2. For each file, check modification date — skip files not modified this month
-3. Parse line-by-line, extract entries where `timestamp` is in the current calendar month
-4. Sum token counts by model from `usage` blocks in assistant messages
-5. Apply pricing table
-6. Cache results in `~/.usagetracker/cost_cache.json` keyed by file path + modification date to avoid re-parsing unchanged files on subsequent refreshes
+3. Check file-level cache: if file path + modification date match a cached entry, use cached token counts
+4. Otherwise parse line-by-line, extract entries where `timestamp` is in the current calendar month
+5. Sum token counts by model from `usage` blocks in assistant messages
+6. Apply pricing table
+7. Update cache file
 
 ### UI
 
@@ -139,26 +144,26 @@ New row in the Claude provider card, below existing usage rows, separated by a t
   API cost est.              $47.23 this month
 ```
 
-- Thin separator line (Divider or custom line) between usage rows and cost row
-- Label "API cost est." on the left, aligned with other labels
-- Dollar amount right-aligned where percentages normally go
-- "this month" in tertiary text where reset labels normally go
-- No progress bar for this row
+The cost row is a **custom HStack** (not a `UsageItemRow`), since it has no progress bar:
+- Left: label "API cost est." with leading padding matching `UsageItemRow` alignment (padded to account for the green dot + label area)
+- Center: empty (no bar)
+- Right: dollar amount in monospaced font + "this month" in tertiary text
+- The dollar amount column is wider than the percentage column to accommodate values like `$1,234.56`
+
+If `~/.claude/projects/` is unreadable or the estimator encounters a directory-level error, the cost row is hidden (same as no data).
 
 ### Integration with ClaudeProvider
 
-`ClaudeProvider.fetchUsage()` will also call `ClaudeCostEstimator.estimateCurrentMonth()` and include the cost in its return value. This requires either:
-- Adding an optional `costEstimate` field to the `Provider` model, or
-- Adding a special `UsageItem` with a flag indicating it's a cost row (not a percentage bar)
-
-**Chosen approach**: Add an optional `metadata` dict to `Provider` to carry the cost estimate. The `ProviderRow` view checks for this metadata on the Claude provider and renders the cost row accordingly.
+Add a typed optional field to `Provider`:
 
 ```swift
 struct Provider {
     // ... existing fields ...
-    var metadata: [String: String]  // e.g. ["apiCostEstimate": "47.23"]
+    var costEstimate: Double? = nil  // API cost estimate in dollars
 }
 ```
+
+`ClaudeProvider` holds a `ClaudeCostEstimator` instance and calls `estimateCurrentMonth()` during `fetchUsage()`. The result populates `costEstimate`. `ProviderRow` checks `provider.costEstimate` and renders the cost row when non-nil.
 
 ## Files to Create/Modify
 
@@ -167,8 +172,8 @@ struct Provider {
 - `Sources/UsageTracker/Providers/ClaudeCostEstimator.swift` — JSONL parsing + cost calculation
 
 ### Modified files
-- `Sources/UsageTracker/Models.swift` — Add `metadata` dict to `Provider`
-- `Sources/UsageTracker/Providers/ClaudeProvider.swift` — Call 2xDetector and CostEstimator, include results in returned Provider
+- `Sources/UsageTracker/Models.swift` — Add `costEstimate: Double?` to `Provider`
+- `Sources/UsageTracker/Providers/ClaudeProvider.swift` — Instantiate 2xDetector and CostEstimator, include results in returned Provider
 - `Sources/UsageTracker/Views/ProviderRow.swift` — Render 2x badge in header, render cost row with separator
 
 ## Edge Cases
@@ -177,5 +182,7 @@ struct Provider {
 - **No `claude_2x.json` config**: 2x indicator never shown (safe default)
 - **Malformed JSONL lines**: skip silently, continue parsing
 - **Unknown model IDs**: fall back to Sonnet pricing
-- **Large number of JSONL files**: file-level mod-date filtering + caching keeps it fast
+- **Large number of JSONL files**: file-level mod-date filtering + per-file caching keeps it fast
 - **Month boundary**: cost resets at the start of each calendar month
+- **Unreadable `~/.claude/projects/`**: cost row hidden entirely
+- **Cost estimator errors**: non-fatal, cost row hidden, usage rows still display normally

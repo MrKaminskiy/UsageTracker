@@ -61,6 +61,8 @@ class AppState: ObservableObject {
     @Published var config: AppConfig = AppConfig()
     @Published var lastUpdated: Date?
 
+    let updateChecker = UpdateChecker()
+
     private let claudeProvider = ClaudeProvider()
     private let cursorProvider = CursorProvider()
     private let codexProvider = CodexProvider()
@@ -179,6 +181,7 @@ class AppState: ObservableObject {
         providers = newProviders
         Log.info("Refresh complete — \(newProviders.count) providers loaded")
         lastUpdated = Date()
+        await updateChecker.check()
     }
 
     func loadConfig() {

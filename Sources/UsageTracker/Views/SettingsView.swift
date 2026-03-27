@@ -191,6 +191,18 @@ struct SettingsView: View {
             }
 
             Section("About") {
+                if appState.updateChecker.updateAvailable,
+                   let version = appState.updateChecker.latestVersion,
+                   let url = appState.updateChecker.downloadURL {
+                    HStack {
+                        Label("Update available: v\(version)", systemImage: "arrow.down.circle.fill")
+                            .foregroundColor(.blue)
+                        Spacer()
+                        Link("Download", destination: url)
+                            .font(.system(size: 11))
+                    }
+                }
+
                 NavigationLink {
                     HelpView()
                 } label: {

@@ -38,6 +38,17 @@ enum ProviderStatus: Equatable {
     case error(String)
 }
 
+/// Maps HTTP status codes to user-friendly error messages.
+func httpErrorMessage(_ statusCode: Int) -> String {
+    switch statusCode {
+    case 401: return "Invalid API key"
+    case 403: return "Access denied"
+    case 429: return "Rate limited"
+    case 500...599: return "Service unavailable"
+    default: return "Error (\(statusCode))"
+    }
+}
+
 struct Provider: Identifiable, Equatable {
     let id: String
     let name: String
@@ -71,6 +82,7 @@ struct AppConfig: Codable {
     var launchAtLogin: Bool = false
     var hideNotConnected: Bool = true
     var hasCompletedOnboarding: Bool = false
+    var showCostEstimate: Bool = false
     var pinnedItem: PinnedItem? = nil
     var enabledProviders: [String: Bool] = [
         "claude": true,

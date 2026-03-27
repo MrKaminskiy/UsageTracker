@@ -129,7 +129,7 @@ actor CodexProvider {
                 name: "Codex",
                 icon: "terminal.fill",
                 items: [],
-                status: .error("HTTP \(httpResponse.statusCode)")
+                status: .error(httpErrorMessage(httpResponse.statusCode))
             )
         }
 

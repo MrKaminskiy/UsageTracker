@@ -137,7 +137,7 @@ actor OpenRouterProvider {
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
-            return Provider(id: "openrouter", name: "OpenRouter", icon: "arrow.trianglehead.branch", items: [], status: .error("HTTP \(httpResponse.statusCode)"))
+            return Provider(id: "openrouter", name: "OpenRouter", icon: "arrow.trianglehead.branch", items: [], status: .error(httpErrorMessage(httpResponse.statusCode)))
         }
 
         guard let keyResponse = try? JSONDecoder().decode(KeyResponse.self, from: data) else {

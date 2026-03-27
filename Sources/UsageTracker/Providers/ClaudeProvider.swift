@@ -115,7 +115,7 @@ actor ClaudeProvider {
                 name: "Claude",
                 icon: "brain",
                 items: [],
-                status: .error("HTTP \(httpResponse.statusCode)")
+                status: .error(httpErrorMessage(httpResponse.statusCode))
             )
         }
 
@@ -162,7 +162,7 @@ actor ClaudeProvider {
         let detector = Claude2xDetector.loadFromDisk()
         let boostStatus = detector.status()
 
-        // Cost estimation
+        // Cost estimation (caller controls visibility via showCostEstimate)
         let costEstimate = await costEstimator.estimateCurrentMonth()
 
         return Provider(

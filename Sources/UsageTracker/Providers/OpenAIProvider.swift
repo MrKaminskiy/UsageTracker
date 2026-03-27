@@ -134,7 +134,7 @@ actor OpenAIProvider {
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
-            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("HTTP \(httpResponse.statusCode)"))
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error(httpErrorMessage(httpResponse.statusCode)))
         }
 
         let costs = try? JSONDecoder().decode(CostsResponse.self, from: data)
@@ -185,7 +185,7 @@ actor OpenAIProvider {
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
-            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error("HTTP \(httpResponse.statusCode)"))
+            return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error(httpErrorMessage(httpResponse.statusCode)))
         }
 
         let usage = try? JSONDecoder().decode(UsageResponse.self, from: data)

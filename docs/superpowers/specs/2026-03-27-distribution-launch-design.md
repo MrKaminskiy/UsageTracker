@@ -54,6 +54,7 @@ Single `make release` command that:
 ### 2.1 Must Fix
 
 - **Bar width consistency** — DONE. Reset label column now always reserves space even when empty.
+- **Cost estimate off by default** — DONE. Added `showCostEstimate` config (default false), toggle in Settings with disclaimer: "Rough estimate based on Claude Code conversation logs. Not actual billing data — may differ significantly from real costs."
 - **User-friendly error messages** — Replace raw HTTP status codes with human-readable messages ("API key expired", "Connection failed, retrying...")
 - **Offline handling** — Graceful behavior when network is unavailable; show last cached data with "offline" indicator
 - **Split SettingsView** — 770 lines is too large; break into sub-components (ProviderSettings, AppearanceSettings, AboutSection)

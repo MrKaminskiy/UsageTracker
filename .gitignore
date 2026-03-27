@@ -14,3 +14,6 @@ DerivedData/
 # Dev runtime
 .usagetracker.pid
 .usagetracker.log
+
+# Brainstorming session files
+.superpowers/

@@ -48,7 +48,7 @@ struct ProviderRow: View {
                             .padding(.vertical, 4)
 
                         HStack(spacing: 8) {
-                            Text("API cost est.")
+                            Text("Code API cost est.")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
 
@@ -233,12 +233,10 @@ struct UsageItemRow: View {
                 .foregroundColor(.secondary)
                 .frame(width: 32, alignment: .trailing)
 
-            if let resetLabel = item.resetLabel {
-                Text(resetLabel)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 60, alignment: .trailing)
-            }
+            Text(item.resetLabel ?? "")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .frame(width: 60, alignment: .trailing)
         }
         .padding(.leading, 24)
         .padding(.vertical, 2)

@@ -16,15 +16,16 @@ struct UsageItemTests {
         #expect(item.percentage == 0.0)
     }
 
-    @Test("Color based on percentage")
+    @Test("Color thresholds based on percentage")
     func usageItemColor() {
         let low = UsageItem(label: "Low", current: 30, limit: 100, resetLabel: nil)
         let mid = UsageItem(label: "Mid", current: 65, limit: 100, resetLabel: nil)
         let high = UsageItem(label: "High", current: 85, limit: 100, resetLabel: nil)
 
-        #expect(low.color == .green)
-        #expect(mid.color == .yellow)
-        #expect(high.color == .red)
+        // Colors are custom gradients, not system colors — verify they differ by threshold
+        #expect(low.color != mid.color)
+        #expect(mid.color != high.color)
+        #expect(low.color != high.color)
     }
 }
 

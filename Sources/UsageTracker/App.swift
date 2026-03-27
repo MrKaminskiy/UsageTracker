@@ -157,6 +157,25 @@ class AppState: ObservableObject {
             }
         }
 
+        // Preserve last-known data for providers that failed to fetch
+        for existingProvider in providers {
+            if !newProviders.contains(where: { $0.id == existingProvider.id }) {
+                // Provider was in previous state but missing now — keep it with error status
+                var preserved = existingProvider
+                preserved.status = .error("Offline")
+                newProviders.append(preserved)
+            }
+        }
+
+        // Strip cost estimates if disabled in settings
+        if !config.showCostEstimate {
+            newProviders = newProviders.map { provider in
+                var p = provider
+                p.costEstimate = nil
+                return p
+            }
+        }
+
         providers = newProviders
         Log.info("Refresh complete — \(newProviders.count) providers loaded")
         lastUpdated = Date()
@@ -211,6 +230,11 @@ class AppState: ObservableObject {
 
     func updateHideNotConnected(_ hide: Bool) {
         config.hideNotConnected = hide
+        saveConfig()
+    }
+
+    func updateShowCostEstimate(_ show: Bool) {
+        config.showCostEstimate = show
         saveConfig()
     }
 

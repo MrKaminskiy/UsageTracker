@@ -1,4 +1,4 @@
-.PHONY: run stop restart logs status build clean
+.PHONY: run stop restart logs status build clean release
 
 APP_NAME := UsageTracker
 PID_FILE := .usagetracker.pid
@@ -44,3 +44,6 @@ status:
 clean:
 	swift package clean
 	rm -f $(PID_FILE) $(LOG_FILE)
+
+release:
+	./scripts/release.sh

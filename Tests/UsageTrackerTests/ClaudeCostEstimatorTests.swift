@@ -139,4 +139,84 @@ struct ClaudeCostEstimatorTests {
         #expect(result != nil)
         #expect(result?.totalCost == 0.0)
     }
+
+    // MARK: - Integration tests (file-level)
+
+    @Test("Aggregates cost across two JSONL files")
+    func aggregatesMultipleFiles() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+
+        // File 1: 1M opus input tokens → $15
+        let line1 = """
+        {"type":"assistant","timestamp":"\(timestamp)","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try line1.write(to: tmpDir.appendingPathComponent("proj1.jsonl"), atomically: true, encoding: .utf8)
+
+        // File 2: 1M sonnet output tokens → $15
+        let line2 = """
+        {"type":"assistant","timestamp":"\(timestamp)","message":{"model":"claude-sonnet-4-6","role":"assistant","usage":{"input_tokens":0,"output_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try line2.write(to: tmpDir.appendingPathComponent("proj2.jsonl"), atomically: true, encoding: .utf8)
+
+        let estimator = ClaudeCostEstimator()
+        let result = await estimator.estimateCurrentMonth(projectsDir: tmpDir)
+        #expect(result != nil)
+        // Opus 1M input = $15, Sonnet 1M output = $15, total = $30
+        #expect(abs((result?.totalCost ?? 0) - 30.0) < 0.01)
+    }
+
+    @Test("Skips lines from previous months")
+    func skipsOldLines() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Old timestamp (Jan 2025) — should be filtered out by parseLine date check
+        let oldLine = """
+        {"type":"assistant","timestamp":"2025-01-15T10:00:00.000Z","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try oldLine.write(to: tmpDir.appendingPathComponent("old.jsonl"), atomically: true, encoding: .utf8)
+
+        let estimator = ClaudeCostEstimator()
+        let result = await estimator.estimateCurrentMonth(projectsDir: tmpDir)
+        // File mod date is now (within month), so file is included, but line timestamp is Jan 2025 — filtered
+        #expect(result != nil)
+        #expect(result?.totalCost == 0.0)
+    }
+
+    @Test("Handles malformed lines mixed with valid lines")
+    func handlesMixedLines() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let content = """
+        {bad json here}
+        {"type":"human","timestamp":"\(timestamp)","message":{"role":"user","content":"hello"}}
+        {"type":"assistant","timestamp":"\(timestamp)","message":{"model":"claude-sonnet-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        // Sonnet 1M input = $3; malformed and human lines are skipped
+        try content.write(to: tmpDir.appendingPathComponent("mixed.jsonl"), atomically: true, encoding: .utf8)
+
+        let estimator = ClaudeCostEstimator()
+        let result = await estimator.estimateCurrentMonth(projectsDir: tmpDir)
+        #expect(result != nil)
+        #expect(abs((result?.totalCost ?? 0) - 3.0) < 0.01)
+    }
+
+    @Test("Returns nil when projects directory does not exist")
+    func nilForMissingDirectory() async {
+        let nonexistent = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID().uuidString)")
+        let estimator = ClaudeCostEstimator()
+        let result = await estimator.estimateCurrentMonth(projectsDir: nonexistent)
+        #expect(result == nil)
+    }
 }

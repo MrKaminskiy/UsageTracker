@@ -124,4 +124,19 @@ struct ClaudeCostEstimatorTests {
         let result = ClaudeCostEstimator.parseLine("{invalid json", monthStart: Date(), monthEnd: Date())
         #expect(result == nil)
     }
+
+    @Test("estimateCurrentMonth with custom directory returns zero cost for empty dir")
+    func emptyProjectsDir() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let estimator = ClaudeCostEstimator()
+        let result = await estimator.estimateCurrentMonth(projectsDir: tmpDir)
+        // An empty directory has no JSONL files — should return a zero-cost estimate (not nil,
+        // because the directory exists)
+        #expect(result != nil)
+        #expect(result?.totalCost == 0.0)
+    }
 }

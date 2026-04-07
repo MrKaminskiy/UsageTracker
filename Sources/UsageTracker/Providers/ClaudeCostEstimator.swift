@@ -35,11 +35,11 @@ actor ClaudeCostEstimator {
     // File-level cache: [filePath: (modDate, cost)]
     private var fileCache: [String: (modDate: Date, cost: Double)] = [:]
 
-    func estimateCurrentMonth() async -> CostEstimate? {
-        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+    func estimateCurrentMonth(projectsDir: URL? = nil) async -> CostEstimate? {
+        let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
 
-        guard FileManager.default.fileExists(atPath: projectsDir.path) else {
+        guard FileManager.default.fileExists(atPath: resolvedDir.path) else {
             return nil
         }
 
@@ -52,7 +52,7 @@ actor ClaudeCostEstimator {
         // Collect all .jsonl files synchronously before entering async context
         let jsonlFiles: [(url: URL, modDate: Date)] = {
             guard let enumerator = FileManager.default.enumerator(
-                at: projectsDir,
+                at: resolvedDir,
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             ) else { return [] }

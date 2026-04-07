@@ -57,10 +57,10 @@ struct ProviderTests {
 @Suite("AppConfig Tests")
 struct AppConfigTests {
 
-    /// Ensures default refresh interval is 10 minutes.
-    @Test("Default refresh interval is 10 minutes")
+    /// Ensures default refresh interval is 5 minutes.
+    @Test("Default refresh interval is 5 minutes")
     func defaultRefreshInterval() {
         let config = AppConfig()
-        #expect(config.refreshIntervalMinutes == 10)
+        #expect(config.refreshIntervalMinutes == 5)
     }
 }

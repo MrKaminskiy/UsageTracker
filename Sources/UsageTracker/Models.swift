@@ -78,7 +78,7 @@ struct PinnedItem: Codable, Equatable {
 }
 
 struct AppConfig: Codable {
-    var refreshIntervalMinutes: Int = 10
+    var refreshIntervalMinutes: Int = 5
     var launchAtLogin: Bool = false
     var hideNotConnected: Bool = true
     var hasCompletedOnboarding: Bool = false

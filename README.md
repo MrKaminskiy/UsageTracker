@@ -1,74 +1,65 @@
 # UsageTracker
 
-A native macOS menu bar app that tracks usage limits across AI services.
+See your Claude Code usage limits in your macOS menu bar, live.
 
-## Features
+<!-- TODO: Replace with a real screenshot or GIF (record with Kap or Gifox, 5–10 seconds) -->
 
-- Per-provider usage display in a popover
-- Auto refresh with configurable interval and manual refresh
-- Login launch and "hide not connected" settings
-- Local-only config and keys, no external telemetry
+## Install
 
-## Supported providers
+1. Download `UsageTracker.dmg` from [Releases](../../releases)
+2. Open the DMG and drag UsageTracker to Applications
+3. First launch: macOS may block an unsigned build — run this once in Terminal:
+   ```bash
+   xattr -cr ~/Applications/UsageTracker.app
+   ```
+   (Signed builds from GitHub Releases don't need this step.)
+4. Launch UsageTracker from Applications
 
-- Claude (Claude Code credentials in Keychain)
-- Cursor (local Cursor DB + API)
-- Codex (via `~/.codex/auth.json`)
-- ElevenLabs (API key)
-- Stability AI (API key)
-- Runway (API key)
-- OpenAI API (API key)
+**Requirements:** macOS 13+, [Claude Code](https://claude.ai/code) installed and logged in
 
-## Installation and run
+## What it shows
 
-Minimum version: macOS 14.
+UsageTracker reads your usage data locally — no accounts, no telemetry.
 
-Xcode:
+| Provider | What's shown | How to connect |
+|----------|-------------|----------------|
+| **Claude** | Session %, Weekly %, Sonnet %, Opus %, monthly cost estimate | Auto-detected (uses Claude Code login) |
+| **Cursor** | Usage % | Auto-detected |
+| **Codex** | Usage % | Auto-detected via `~/.codex/auth.json` |
+| **OpenAI** | Monthly spend (admin key) or daily requests + tokens (project key) | Add key in Settings |
+| **ElevenLabs** | Character quota % | Add key in Settings |
+| **OpenRouter** | Credit balance or monthly spend | Add key in Settings |
 
-1. Open `Package.swift` in Xcode.
-2. Select the `UsageTracker` scheme.
-3. Run.
+## Usage
 
-CLI:
+- **Left-click** the menu bar icon — open usage popover
+- **Right-click** the menu bar icon — Settings, Refresh, Quit
+- The icon color reflects your highest current usage (green → orange → red)
+- Pin any metric to the menu bar via the dot indicator in the popover
 
-```bash
-swift build
-```
+## Settings
 
-## Settings and files
+Settings live in `~/.usagetracker/`:
+- `config.json` — refresh interval, provider order, visibility
+- `openai.json`, `elevenlabs.json`, `openrouter.json` — API keys
 
-- General config: `~/.usagetracker/config.json`
-- API keys: `~/.usagetracker/<provider>.json`
-  - `elevenlabs.json`, `stability.json`, `runway.json`, `openai.json`
-- Settings and keys can be configured in the Settings window
-
-## Browser extension
-
-The `Extension/` folder contains a browser extension that sends usage data to
-`localhost:19284`. The receiver is implemented in `ExtensionServer`, but wiring
-extension data into the main UI may need extra setup.
-
-See `Extension/README.md` for installation.
-
-## Development and tests
+## Build from source
 
 ```bash
-swift test
+git clone https://github.com/nikitakaminskiy/UsageTracker
+cd UsageTracker
+make build
+.build/debug/UsageTracker
 ```
 
-## Project structure (brief)
+To run tests:
+```bash
+make test
+```
 
-- `Sources/UsageTracker/` — app and UI
-- `Sources/UsageTracker/Providers/` — providers and usage logic
-- `Extension/` — browser extension
-- `Tests/` — model tests
+## Known limitations
 
-## Context7
-
-1. Goal: quick overview of AI usage limits in the menu bar
-2. Platform: macOS 14+, SwiftUI, SwiftPM
-3. Data: local files, Keychain, API calls
-4. Refresh: timer + manual refresh
-5. Settings: interval, launch at login, provider toggles
-6. Security: everything stays local
-7. Extension: browser usage collection via localhost
+- **Password prompt on first launch**: UsageTracker reads Claude Code's stored login from your macOS Keychain. Click "Always Allow" once and you won't be asked again.
+- **Runway and Stability**: Providers are implemented but not yet verified. They are hidden by default. You can enable them in Settings.
+- **Cost estimate**: Reads `~/.claude/projects/*.jsonl` files. Accurate for Claude Code usage; does not include API usage outside Claude Code.
+- **macOS 13+ required**: The app uses SwiftUI features not available on earlier versions.

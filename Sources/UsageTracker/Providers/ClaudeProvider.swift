@@ -110,6 +110,11 @@ actor ClaudeProvider {
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            // Throw on transient errors (rate limit, server errors) so the caller can
+            // preserve the last-known data instead of replacing it with an error state.
+            if httpResponse.statusCode == 429 || httpResponse.statusCode >= 500 {
+                throw URLError(.init(rawValue: httpResponse.statusCode))
+            }
             return Provider(
                 id: "claude",
                 name: "Claude",

@@ -162,10 +162,8 @@ class AppState: ObservableObject {
         // Preserve last-known data for providers that failed to fetch
         for existingProvider in providers {
             if !newProviders.contains(where: { $0.id == existingProvider.id }) {
-                // Provider was in previous state but missing now — keep it with error status
-                var preserved = existingProvider
-                preserved.status = .error("Offline")
-                newProviders.append(preserved)
+                // Keep previous data intact for transient failures (rate limits, server errors)
+                newProviders.append(existingProvider)
             }
         }
 

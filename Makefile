@@ -1,4 +1,4 @@
-.PHONY: run stop restart logs status build clean release
+.PHONY: run stop restart logs status build test clean release
 
 APP_NAME := UsageTracker
 PID_FILE := .usagetracker.pid
@@ -6,6 +6,9 @@ LOG_FILE := .usagetracker.log
 
 build:
 	swift build
+
+test:
+	swift test
 
 run: build
 	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \

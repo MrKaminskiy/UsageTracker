@@ -89,8 +89,8 @@ struct AppConfig: Codable {
         "cursor": true,
         "codex": true,
         "elevenlabs": true,
-        "stability": true,
-        "runway": true,
+        "stability": false,   // untested — hidden by default
+        "runway": false,      // untested — hidden by default
         "openai": true,
         "openrouter": true
     ]

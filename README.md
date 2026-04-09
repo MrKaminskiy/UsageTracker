@@ -2,7 +2,13 @@
 
 Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, ElevenLabs, OpenRouter and more, right in your macOS menu bar.
 
-<!-- TODO: Replace with a real screenshot or GIF (record with Kap or Gifox, 5–10 seconds) -->
+![UsageTracker demo](demo.gif)
+
+| Popover | Settings |
+|---------|----------|
+| ![Popover](screenshot-popover.png) | ![Settings](screenshot-popover-settings.png) |
+
+![Settings demo](settings-demo.gif)
 
 ## Install
 

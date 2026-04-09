@@ -10,17 +10,19 @@ APPLE_ID="${APPLE_ID:?Set APPLE_ID to your Apple ID email}"
 APP_PASSWORD="${APP_PASSWORD:?Set APP_PASSWORD to an app-specific password}"
 
 echo "==> Building release (universal binary)..."
-swift build -c release
-# Note: SwiftPM builds for the host architecture by default.
-# For a universal binary, use: swift build -c release --triple arm64-apple-macosx && swift build -c release --triple x86_64-apple-macosx
-# then lipo them together. For v1.0, building for host arch (Apple Silicon) is fine.
+swift build -c release --triple arm64-apple-macosx
+swift build -c release --triple x86_64-apple-macosx
+lipo -create \
+    .build/arm64-apple-macosx/release/UsageTracker \
+    .build/x86_64-apple-macosx/release/UsageTracker \
+    -output .build/release-universal-UsageTracker
 
 echo "==> Creating app bundle..."
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR/Contents/MacOS"
 mkdir -p "$BUNDLE_DIR/Contents/Resources"
 
-cp .build/release/UsageTracker "$BUNDLE_DIR/Contents/MacOS/"
+cp .build/release-universal-UsageTracker "$BUNDLE_DIR/Contents/MacOS/UsageTracker"
 cp Info.plist "$BUNDLE_DIR/Contents/"
 
 # Copy app icon if it exists

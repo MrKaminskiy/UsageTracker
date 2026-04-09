@@ -34,11 +34,14 @@ codesign --force --options runtime --sign "$IDENTITY" \
     "$BUNDLE_DIR"
 
 echo "==> Notarizing..."
-xcrun notarytool submit "$BUNDLE_DIR" \
+ZIP_PATH="build/${APP_NAME}.zip"
+ditto -c -k --keepParent "$BUNDLE_DIR" "$ZIP_PATH"
+xcrun notarytool submit "$ZIP_PATH" \
     --apple-id "$APPLE_ID" \
     --team-id "$TEAM_ID" \
     --password "$APP_PASSWORD" \
     --wait
+rm -f "$ZIP_PATH"
 
 echo "==> Stapling..."
 xcrun stapler staple "$BUNDLE_DIR"

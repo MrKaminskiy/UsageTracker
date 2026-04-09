@@ -1,6 +1,6 @@
 # UsageTracker
 
-See your Claude Code usage limits in your macOS menu bar, live.
+Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, ElevenLabs, OpenRouter and more, right in your macOS menu bar.
 
 <!-- TODO: Replace with a real screenshot or GIF (record with Kap or Gifox, 5–10 seconds) -->
 
@@ -46,10 +46,9 @@ Settings live in `~/.usagetracker/`:
 ## Build from source
 
 ```bash
-git clone https://github.com/nikitakaminskiy/UsageTracker
+git clone https://github.com/MrKaminskiy/UsageTracker
 cd UsageTracker
-make build
-.build/debug/UsageTracker
+make run
 ```
 
 To run tests:

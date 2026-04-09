@@ -4,7 +4,7 @@ Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, Eleve
 
 ### Popover — click the menu bar icon to see all your providers at a glance
 
-![UsageTracker demo](demo.gif)
+<img src="demo.gif" width="600">
 
 | Popover | Settings |
 |---------|----------|
@@ -12,7 +12,7 @@ Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, Eleve
 
 ### Settings — toggle providers, add API keys, drag to reorder
 
-![Settings demo](settings-demo.gif)
+<img src="settings-demo.gif" width="500">
 
 ## Install
 

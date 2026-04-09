@@ -96,7 +96,6 @@ actor OpenRouterProvider {
         let credits = try JSONDecoder().decode(CreditsResponse.self, from: data)
         let totalCredits = credits.data.totalCredits ?? 0
         let totalUsage = credits.data.totalUsage ?? 0
-        let remaining = totalCredits - totalUsage
 
         var items: [UsageItem] = []
 

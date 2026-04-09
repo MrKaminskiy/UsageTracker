@@ -2,11 +2,15 @@
 
 Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, ElevenLabs, OpenRouter and more, right in your macOS menu bar.
 
+### Popover — click the menu bar icon to see all your providers at a glance
+
 ![UsageTracker demo](demo.gif)
 
 | Popover | Settings |
 |---------|----------|
 | ![Popover](screenshot-popover.png) | ![Settings](screenshot-popover-settings.png) |
+
+### Settings — toggle providers, add API keys, drag to reorder
 
 ![Settings demo](settings-demo.gif)
 

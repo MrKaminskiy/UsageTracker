@@ -124,7 +124,7 @@ struct MenuBarView: View {
             Spacer()
 
             if let lastUpdated = appState.lastUpdated {
-                Text("Updated \(lastUpdated.formatted(.relative(presentation: .named)))")
+                Text("Updated \(lastUpdated.formatted(.relative(presentation: .named).locale(Locale(identifier: "en_US"))))")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }

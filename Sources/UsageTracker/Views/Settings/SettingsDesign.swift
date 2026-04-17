@@ -82,9 +82,9 @@ enum SettingsTabKind: String, CaseIterable, Identifiable {
 /// Shared layout/style tokens for the Settings window.
 enum SettingsDesign {
     static let windowDefaultWidth: CGFloat = 560
-    static let windowDefaultHeight: CGFloat = 600
+    static let windowDefaultHeight: CGFloat = 500
     static let windowMinWidth: CGFloat = 480
-    static let windowMinHeight: CGFloat = 540
+    static let windowMinHeight: CGFloat = 460
 
     static let cardCornerRadius: CGFloat = 10
     static let rowVerticalPadding: CGFloat = 10

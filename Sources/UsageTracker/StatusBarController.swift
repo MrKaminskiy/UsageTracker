@@ -3,6 +3,7 @@ import AppKit
 
 extension Notification.Name {
     static let openSettings = Notification.Name("openSettings")
+    static let showOnboarding = Notification.Name("showOnboarding")
 }
 
 @MainActor

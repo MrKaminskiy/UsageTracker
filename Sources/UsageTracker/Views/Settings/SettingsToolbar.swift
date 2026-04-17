@@ -16,6 +16,13 @@ struct SettingsToolbar: View {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(.bar)
+        .overlay(alignment: .top) {
+            Text("Preferences")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.top, 7)
+                .allowsHitTesting(false)
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(SettingsDesign.hairlineColor)

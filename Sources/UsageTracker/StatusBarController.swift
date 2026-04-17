@@ -28,15 +28,10 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
 
         let newWindow = NSWindow(contentViewController: hostingController)
         newWindow.title = "Preferences"
-
-        let toolbar = NSToolbar(identifier: "PreferencesToolbar")
-        toolbar.displayMode = .iconOnly
-        toolbar.showsBaselineSeparator = false
-        newWindow.toolbar = toolbar
-        newWindow.toolbarStyle = .unifiedCompact
-
-        newWindow.styleMask = [.titled, .closable, .resizable]
-        newWindow.titleVisibility = .visible
+        newWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        newWindow.titleVisibility = .hidden
+        newWindow.titlebarAppearsTransparent = true
+        newWindow.isMovableByWindowBackground = true
         newWindow.setContentSize(NSSize(
             width: SettingsDesign.windowDefaultWidth,
             height: SettingsDesign.windowDefaultHeight

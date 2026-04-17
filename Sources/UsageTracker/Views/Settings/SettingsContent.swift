@@ -41,6 +41,7 @@ struct SettingsContent: View {
             minWidth: SettingsDesign.windowMinWidth,
             minHeight: SettingsDesign.windowMinHeight
         )
+        .ignoresSafeArea(.all, edges: .top)
         .onAppear {
             onTabChanged?(selected.wrappedValue)
         }

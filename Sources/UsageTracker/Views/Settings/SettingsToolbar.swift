@@ -12,10 +12,17 @@ struct SettingsToolbar: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 34)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(.bar)
+        .overlay(alignment: .top) {
+            Text("Preferences")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.top, 7)
+                .allowsHitTesting(false)
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(SettingsDesign.hairlineColor)

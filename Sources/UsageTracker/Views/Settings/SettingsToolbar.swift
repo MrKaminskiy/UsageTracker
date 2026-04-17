@@ -6,20 +6,13 @@ struct SettingsToolbar: View {
     @Binding var selected: SettingsTabKind
 
     var body: some View {
-        VStack(spacing: 8) {
-            Text("Preferences")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
-                .padding(.top, 6)
-
-            HStack(spacing: 16) {
-                ForEach(SettingsTabKind.allCases) { tab in
-                    tabButton(tab)
-                }
+        HStack(spacing: 16) {
+            ForEach(SettingsTabKind.allCases) { tab in
+                tabButton(tab)
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 6)
+        .padding(.top, 34)   // clears the macOS title-bar zone (~28pt) plus a small breathing margin
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(.bar)

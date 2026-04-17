@@ -30,7 +30,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         newWindow.title = "Preferences"
         newWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         newWindow.titlebarAppearsTransparent = true
-        newWindow.titleVisibility = .hidden
+        newWindow.titleVisibility = .visible
         newWindow.isMovableByWindowBackground = true
         newWindow.setContentSize(NSSize(
             width: SettingsDesign.windowDefaultWidth,

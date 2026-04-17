@@ -56,3 +56,46 @@ struct PinnedSelectionTests {
         #expect(selection.asPinnedItem == pin)
     }
 }
+
+@Suite("SettingsTabKind persistence")
+struct SettingsTabKindTests {
+
+    @Test("All cases have unique raw values")
+    func uniqueRawValues() {
+        let raws = SettingsTabKind.allCases.map(\.rawValue)
+        let unique = Set(raws)
+        #expect(raws.count == unique.count)
+    }
+
+    @Test("Raw value round-trip")
+    func rawRoundTrip() {
+        for tab in SettingsTabKind.allCases {
+            let restored = SettingsTabKind(rawValue: tab.rawValue)
+            #expect(restored == tab)
+        }
+    }
+
+    @Test("Unknown raw value is nil (caller falls back to .general)")
+    func unknownRaw() {
+        #expect(SettingsTabKind(rawValue: "bogus") == nil)
+    }
+
+    @Test("Each tab has a distinct keyboard shortcut")
+    func uniqueShortcuts() {
+        let shortcuts = SettingsTabKind.allCases.map { String($0.shortcut.character) }
+        let unique = Set(shortcuts)
+        #expect(shortcuts.count == unique.count)
+    }
+}
+
+@Suite("AppState refresh interval")
+struct AppStateRefreshIntervalTests {
+
+    @MainActor
+    @Test("updateRefreshInterval writes to config")
+    func writesToConfig() {
+        let appState = AppState()
+        appState.updateRefreshInterval(15)
+        #expect(appState.config.refreshIntervalMinutes == 15)
+    }
+}

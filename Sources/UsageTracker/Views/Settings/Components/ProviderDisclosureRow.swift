@@ -31,7 +31,12 @@ struct ProviderDisclosureRow: View {
         switch connectionStatus {
         case .connected: return "Connected"
         case .idle: return "Not configured"
-        case .failed: return "Connection failed"
+        case .failed:
+            if case .error(let message) = liveProvider?.status,
+               message.localizedCaseInsensitiveContains("invalid") {
+                return "Invalid key"
+            }
+            return "Connection failed"
         case .disabled: return provider.hint
         }
     }
@@ -124,9 +129,7 @@ struct ProviderDisclosureRow: View {
                 .foregroundStyle(.tertiary)
 
             if items.isEmpty {
-                Text(emptyLimitsMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                emptyLimitsView
                     .padding(.vertical, 2)
             } else {
                 VStack(spacing: 2) {
@@ -134,11 +137,29 @@ struct ProviderDisclosureRow: View {
                         UsageItemRow(item: item)
                     }
                 }
-                .padding(.leading, -24)
+                .padding(.leading, -24) // UsageItemRow internally pads .leading 24; cancel it for full-width
             }
         }
         .padding(.horizontal, SettingsDesign.rowHorizontalPadding)
         .padding(.vertical, SettingsDesign.rowVerticalPadding)
+    }
+
+    @ViewBuilder
+    private var emptyLimitsView: some View {
+        if case .notConnected(let url) = liveProvider?.status {
+            HStack(spacing: 6) {
+                Text(emptyLimitsMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Link("View dashboard ↗", destination: url)
+                    .font(.system(size: 11))
+            }
+        } else {
+            Text(emptyLimitsMessage)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
     }
 
     private var emptyLimitsMessage: String {

@@ -80,6 +80,10 @@ struct GeneralTab: View {
             }
         } catch {
             Log.error("Failed to set launch at login: \(error)")
+            // Revert the toggle so its visual state matches the actual OS state
+            DispatchQueue.main.async {
+                launchAtLogin = !enabled
+            }
         }
     }
 }

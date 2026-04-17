@@ -6,13 +6,20 @@ struct SettingsToolbar: View {
     @Binding var selected: SettingsTabKind
 
     var body: some View {
-        HStack(spacing: 16) {
-            ForEach(SettingsTabKind.allCases) { tab in
-                tabButton(tab)
+        VStack(spacing: 8) {
+            Text("Preferences")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.top, 6)
+
+            HStack(spacing: 16) {
+                ForEach(SettingsTabKind.allCases) { tab in
+                    tabButton(tab)
+                }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 6)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(.bar)
@@ -35,11 +42,11 @@ struct SettingsToolbar: View {
                         .fill(isActive ? Color.accentColor : Color.clear)
                         .frame(width: SettingsDesign.tabIconSize, height: SettingsDesign.tabIconSize)
                     Image(systemName: tab.icon)
-                        .font(.system(size: 16, weight: .regular))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundColor(isActive ? .white : .secondary)
                 }
                 Text(tab.label)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundColor(isActive ? .accentColor : .secondary)
                     .fontWeight(isActive ? .medium : .regular)
             }

@@ -92,7 +92,7 @@ enum SettingsDesign {
     static let hairlineColor = Color.primary.opacity(0.08)
     static let hairlineWidth: CGFloat = 0.5
 
-    static let tabIconSize: CGFloat = 32
+    static let tabIconSize: CGFloat = 38
     static let tabCornerRadius: CGFloat = 6
 
     static let statusDotSize: CGFloat = 6

@@ -561,7 +561,7 @@ struct SettingsToolbar: View {
             }
         }
         .buttonStyle(.plain)
-        .keyboardShortcut(KeyEquivalent(tab.shortcut), modifiers: .command)
+        .keyboardShortcut(tab.shortcut, modifiers: .command)
         .accessibilityLabel("\(tab.label) settings")
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
     }

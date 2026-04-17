@@ -67,8 +67,8 @@ enum SettingsTabKind: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Keyboard shortcut character: "1"..."5".
-    var shortcut: Character {
+    /// Keyboard shortcut for selecting this tab from the Settings window.
+    var shortcut: KeyEquivalent {
         switch self {
         case .general: return "1"
         case .providers: return "2"

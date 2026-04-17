@@ -3,6 +3,7 @@ import AppKit
 
 extension Notification.Name {
     static let openSettings = Notification.Name("openSettings")
+    static let showOnboarding = Notification.Name("showOnboarding")
 }
 
 @MainActor
@@ -22,12 +23,23 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        let settingsView = SettingsView(appState: appState)
-        let hostingController = NSHostingController(rootView: settingsView)
+        let rootView = SettingsContent(appState: appState)
+        let hostingController = NSHostingController(rootView: rootView)
 
         let newWindow = NSWindow(contentViewController: hostingController)
-        newWindow.title = "UsageTracker Settings"
-        newWindow.styleMask = [.titled, .closable]
+        newWindow.title = "Preferences"
+        newWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        newWindow.titleVisibility = .hidden
+        newWindow.titlebarAppearsTransparent = true
+        newWindow.isMovableByWindowBackground = true
+        newWindow.setContentSize(NSSize(
+            width: SettingsDesign.windowDefaultWidth,
+            height: SettingsDesign.windowDefaultHeight
+        ))
+        newWindow.minSize = NSSize(
+            width: SettingsDesign.windowMinWidth,
+            height: SettingsDesign.windowMinHeight
+        )
         newWindow.center()
         newWindow.delegate = self
         newWindow.isReleasedWhenClosed = false
@@ -149,6 +161,12 @@ class StatusBarController: NSObject, ObservableObject {
             name: .openSettings,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(showOnboardingFromNotification),
+            name: .showOnboarding,
+            object: nil
+        )
     }
 
     func updateIcon(percentage: Double, isLoading: Bool) {
@@ -193,6 +211,10 @@ class StatusBarController: NSObject, ObservableObject {
         }
 
         settingsWindowController?.showSettings()
+    }
+
+    @objc private func showOnboardingFromNotification() {
+        onboardingWindowController?.showOnboarding()
     }
 
     @objc private func clearCache() {

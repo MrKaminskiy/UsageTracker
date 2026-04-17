@@ -7,7 +7,15 @@ struct UsageTrackerApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView(appState: appDelegate.appState)
+            EmptyView()
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    NotificationCenter.default.post(name: .openSettings, object: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

@@ -1,13 +1,9 @@
+// Sources/UsageTracker/Views/Settings/Tabs/ProvidersTab.swift
 import SwiftUI
-import ServiceManagement
-import AppKit
 
-/// Settings screen for app configuration and provider access.
-struct SettingsView: View {
+struct ProvidersTab: View {
     @ObservedObject var appState: AppState
-    @State private var launchAtLogin: Bool = false
 
-    // API Keys state
     @State private var elevenLabsKey: String = ""
     @State private var elevenLabsSaved: Bool = false
     @State private var stabilityKey: String = ""
@@ -22,106 +18,81 @@ struct SettingsView: View {
     private let configDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".usagetracker")
 
-    /// All provider definitions
     private var allProviders: [String: ProviderSettingsItem] {
         [
             "claude": ProviderSettingsItem(
-                id: "claude",
-                icon: "brain",
-                name: "Claude",
-                hint: "via Claude Code",
-                keyConfig: nil
+                id: "claude", icon: "brain", name: "Claude",
+                hint: "via Claude Code", keyConfig: nil
             ),
             "cursor": ProviderSettingsItem(
-                id: "cursor",
-                icon: "cursorarrow.rays",
-                name: "Cursor",
-                hint: "via Cursor app",
-                keyConfig: nil
+                id: "cursor", icon: "cursorarrow.rays", name: "Cursor",
+                hint: "via Cursor app", keyConfig: nil
             ),
             "codex": ProviderSettingsItem(
-                id: "codex",
-                icon: "terminal.fill",
-                name: "Codex",
-                hint: "via codex login",
-                keyConfig: nil
+                id: "codex", icon: "terminal.fill", name: "Codex",
+                hint: "via codex login", keyConfig: nil
             ),
             "elevenlabs": ProviderSettingsItem(
-                id: "elevenlabs",
-                icon: "waveform",
-                name: "ElevenLabs",
+                id: "elevenlabs", icon: "waveform", name: "ElevenLabs",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
                     placeholder: "API key",
                     hint: "elevenlabs.io/app/settings/api-keys",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://elevenlabs.io/app/settings/api-keys"),
-                    key: $elevenLabsKey,
-                    saved: $elevenLabsSaved,
+                    key: $elevenLabsKey, saved: $elevenLabsSaved,
                     onSave: { saveKey("elevenlabs", elevenLabsKey) },
                     validateKey: validateElevenLabsKey
                 )
             ),
             "stability": ProviderSettingsItem(
-                id: "stability",
-                icon: "paintbrush",
-                name: "Stability AI",
+                id: "stability", icon: "paintbrush", name: "Stability AI",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
                     placeholder: "API key",
                     hint: "platform.stability.ai/account/keys",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://platform.stability.ai/account/keys"),
-                    key: $stabilityKey,
-                    saved: $stabilitySaved,
+                    key: $stabilityKey, saved: $stabilitySaved,
                     onSave: { saveKey("stability", stabilityKey) },
                     validateKey: validateStabilityKey
                 )
             ),
             "runway": ProviderSettingsItem(
-                id: "runway",
-                icon: "film",
-                name: "Runway",
+                id: "runway", icon: "film", name: "Runway",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
                     placeholder: "API key",
                     hint: "dev.runwayml.com",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://dev.runwayml.com"),
-                    key: $runwayKey,
-                    saved: $runwaySaved,
+                    key: $runwayKey, saved: $runwaySaved,
                     onSave: { saveKey("runway", runwayKey) },
                     validateKey: validateRunwayKey
                 )
             ),
             "openai": ProviderSettingsItem(
-                id: "openai",
-                icon: "sparkles",
-                name: "OpenAI API",
+                id: "openai", icon: "sparkles", name: "OpenAI API",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
                     placeholder: "API key",
                     hint: "platform.openai.com/api-keys",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://platform.openai.com/api-keys"),
-                    key: $openAIKey,
-                    saved: $openAISaved,
+                    key: $openAIKey, saved: $openAISaved,
                     onSave: { saveKey("openai", openAIKey) },
                     validateKey: validateOpenAIKey
                 )
             ),
             "openrouter": ProviderSettingsItem(
-                id: "openrouter",
-                icon: "arrow.trianglehead.branch",
-                name: "OpenRouter",
+                id: "openrouter", icon: "arrow.trianglehead.branch", name: "OpenRouter",
                 hint: "API key required",
                 keyConfig: ProviderKeyConfig(
                     placeholder: "API key",
                     hint: "openrouter.ai/settings/keys",
                     linkTitle: "Get key",
                     linkURL: URL(string: "https://openrouter.ai/settings/keys"),
-                    key: $openRouterKey,
-                    saved: $openRouterSaved,
+                    key: $openRouterKey, saved: $openRouterSaved,
                     onSave: { saveKey("openrouter", openRouterKey) },
                     validateKey: validateOpenRouterKey
                 )
@@ -129,122 +100,40 @@ struct SettingsView: View {
         ]
     }
 
-    /// Provider list sorted by user's configured order
     private var providerSettings: [ProviderSettingsItem] {
         appState.config.providerOrder.compactMap { allProviders[$0] }
     }
 
-    /// Returns the app version string for display.
-    private var appVersionLabel: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
-        switch (version, build) {
-        case let (version?, build?):
-            return "v\(version) (\(build))"
-        case let (version?, nil):
-            return "v\(version)"
-        case let (nil, build?):
-            return "v\(build)"
-        default:
-            return "v1.0"
-        }
-    }
-
     var body: some View {
-        NavigationStack {
-            Form {
-            Section("General") {
-                Toggle("Launch at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, newValue in
-                        setLaunchAtLogin(newValue)
-                    }
-
-                Toggle("Hide not connected", isOn: Binding(
-                    get: { appState.config.hideNotConnected },
-                    set: { appState.updateHideNotConnected($0) }
-                ))
-
-                Toggle(isOn: Binding(
-                    get: { appState.config.showCostEstimate },
-                    set: { appState.updateShowCostEstimate($0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show API cost estimate")
-                        Text("Rough estimate based on Claude Code conversation logs. Not actual billing data — may differ significantly from real costs.")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Section("Providers & Keys") {
-                ForEach(providerSettings) { provider in
-                    ProviderSettingsRow(provider: provider, appState: appState)
-                        .onDrag {
-                            NSItemProvider(object: provider.id as NSString)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsCard {
+                    ForEach(Array(providerSettings.enumerated()), id: \.element.id) { index, provider in
+                        ProviderDisclosureRow(provider: provider, appState: appState)
+                            .onDrag {
+                                NSItemProvider(object: provider.id as NSString)
+                            }
+                            .onDrop(of: [.text], delegate: ProviderDropDelegate(
+                                item: provider.id,
+                                appState: appState
+                            ))
+                        if index < providerSettings.count - 1 {
+                            SettingsCardDivider()
                         }
-                        .onDrop(of: [.text], delegate: ProviderDropDelegate(
-                            item: provider.id,
-                            appState: appState
-                        ))
-                }
-            }
-
-            Section("About") {
-                if appState.updateChecker.updateAvailable,
-                   let version = appState.updateChecker.latestVersion,
-                   let url = appState.updateChecker.downloadURL {
-                    HStack {
-                        Label("Update available: v\(version)", systemImage: "arrow.down.circle.fill")
-                            .foregroundColor(.blue)
-                        Spacer()
-                        Link("Download", destination: url)
-                            .font(.system(size: 11))
                     }
                 }
 
-                NavigationLink {
-                    HelpView()
-                } label: {
-                    Label("How It Works", systemImage: "questionmark.circle")
-                }
+                Spacer(minLength: 0)
             }
-
-            Section {
-                HStack {
-                    Text("UsageTracker")
-                    Spacer()
-                    Text(appVersionLabel)
-                        .foregroundColor(.secondary)
-                }
-            }
+            .padding(16)
         }
-            .formStyle(.grouped)
-            .scrollIndicators(.never)
-            .scrollContentBackground(.hidden)
-            .navigationTitle("Settings")
-        }
-        .frame(width: 400, height: 600)
         .onAppear {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
             loadAllKeys()
         }
     }
 
-    /// Enables or disables launch at login.
-    private func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-        } catch {
-            print("Failed to set launch at login: \(error)")
-        }
-    }
+    // MARK: - Key persistence
 
-    /// Loads all stored API keys into view state.
     private func loadAllKeys() {
         elevenLabsKey = loadKey("elevenlabs") ?? ""
         elevenLabsSaved = !elevenLabsKey.isEmpty
@@ -262,7 +151,6 @@ struct SettingsView: View {
         openRouterSaved = !openRouterKey.isEmpty
     }
 
-    /// Loads a single API key from the config directory.
     private func loadKey(_ name: String) -> String? {
         let path = configDir.appendingPathComponent("\(name).json")
         guard let data = try? Data(contentsOf: path),
@@ -272,7 +160,6 @@ struct SettingsView: View {
         return config["api_key"]
     }
 
-    /// Saves an API key and triggers a refresh.
     private func saveKey(_ name: String, _ key: String) {
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
 
@@ -282,7 +169,6 @@ struct SettingsView: View {
         if let data = try? JSONEncoder().encode(config) {
             try? data.write(to: path)
 
-            // Update saved state
             switch name {
             case "elevenlabs": elevenLabsSaved = true
             case "stability": stabilitySaved = true
@@ -292,21 +178,17 @@ struct SettingsView: View {
             default: break
             }
 
-            // Trigger refresh
-            Task {
-                await appState.refresh()
-            }
+            Task { await appState.refresh() }
         }
     }
 
-    // MARK: - API Key Validation
+    // MARK: - Validators (copied verbatim from current SettingsView)
 
     private func validateElevenLabsKey(_ key: String) async -> (Bool, String?) {
         let url = URL(string: "https://api.elevenlabs.io/v1/user")!
         var request = URLRequest(url: url)
         request.setValue(key, forHTTPHeaderField: "xi-api-key")
         request.timeoutInterval = 10
-
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
@@ -325,7 +207,6 @@ struct SettingsView: View {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
-
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
@@ -340,7 +221,6 @@ struct SettingsView: View {
     }
 
     private func validateRunwayKey(_ key: String) async -> (Bool, String?) {
-        // Runway doesn't have a simple validation endpoint, so we just check format
         if key.hasPrefix("key_") && key.count > 10 {
             return (true, nil)
         }
@@ -352,7 +232,6 @@ struct SettingsView: View {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
-
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
@@ -367,33 +246,26 @@ struct SettingsView: View {
     }
 
     private func validateOpenAIKey(_ key: String) async -> (Bool, String?) {
-        // Admin keys (sk-admin-) use different endpoints than project keys
         let isAdminKey = key.hasPrefix("sk-admin-")
-
         let url: URL
         if isAdminKey {
-            // Admin keys: test with organization costs endpoint
             let now = Int(Date().timeIntervalSince1970)
-            let start = now - 86400 // 1 day ago
+            let start = now - 86400
             url = URL(string: "https://api.openai.com/v1/organization/costs?start_time=\(start)&end_time=\(now)&bucket_width=1d")!
         } else {
-            // Project keys: test with models endpoint
             url = URL(string: "https://api.openai.com/v1/models")!
         }
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
-
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
                 if httpResponse.statusCode == 200 { return (true, nil) }
                 if httpResponse.statusCode == 401 { return (false, "Invalid API key") }
                 if httpResponse.statusCode == 403 {
-                    if isAdminKey {
-                        return (false, "Need usage scope")
-                    }
+                    if isAdminKey { return (false, "Need usage scope") }
                     return (false, "Missing permissions")
                 }
                 return (false, "HTTP \(httpResponse.statusCode)")
@@ -403,5 +275,4 @@ struct SettingsView: View {
             return (false, "Connection failed")
         }
     }
-
 }

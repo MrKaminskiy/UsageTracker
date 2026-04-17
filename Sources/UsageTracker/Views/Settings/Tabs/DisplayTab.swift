@@ -40,8 +40,14 @@ struct DisplayTab: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 SettingsCard {
-                    HStack {
-                        Text("Hide not connected")
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hide not connected")
+                            Text("Hides providers from the menu bar popover when they have no API key, aren't signed in, or failed to authenticate.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         Spacer()
                         Toggle("", isOn: Binding(
                             get: { appState.config.hideNotConnected },

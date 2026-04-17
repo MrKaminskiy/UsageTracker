@@ -23,14 +23,11 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        let weakSelfRef = self
-        let rootView = SettingsContent(appState: appState) { [weak weakSelfRef] tab in
-            weakSelfRef?.window?.title = "UsageTracker · \(tab.label)"
-        }
+        let rootView = SettingsContent(appState: appState)
         let hostingController = NSHostingController(rootView: rootView)
 
         let newWindow = NSWindow(contentViewController: hostingController)
-        newWindow.title = "UsageTracker"
+        newWindow.title = "Preferences"
         newWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         newWindow.titlebarAppearsTransparent = true
         newWindow.titleVisibility = .hidden

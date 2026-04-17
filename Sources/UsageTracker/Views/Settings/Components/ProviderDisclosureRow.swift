@@ -36,8 +36,6 @@ struct ProviderDisclosureRow: View {
         }
     }
 
-    private var hasKeyField: Bool { provider.keyConfig != nil }
-
     private var isUntested: Bool {
         provider.id == "runway" || provider.id == "stability"
     }
@@ -45,19 +43,23 @@ struct ProviderDisclosureRow: View {
     var body: some View {
         VStack(spacing: 0) {
             headerRow
-            if isExpanded, let key = provider.keyConfig {
+            if isExpanded {
                 SettingsCardDivider()
-                expandedBody(keyConfig: key)
+                VStack(spacing: 0) {
+                    limitsSection
+                    if let key = provider.keyConfig {
+                        SettingsCardDivider()
+                        apiKeySection(keyConfig: key)
+                    }
+                }
             }
         }
     }
 
     private var headerRow: some View {
         Button {
-            if hasKeyField {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    isExpanded.toggle()
-                }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isExpanded.toggle()
             }
         } label: {
             HStack(spacing: 10) {
@@ -101,14 +103,10 @@ struct ProviderDisclosureRow: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
 
-                if hasKeyField {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: 14)
-                } else {
-                    Color.clear.frame(width: 14)
-                }
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 14)
             }
             .settingsRowPadding()
             .contentShape(Rectangle())
@@ -117,7 +115,40 @@ struct ProviderDisclosureRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func expandedBody(keyConfig: ProviderKeyConfig) -> some View {
+    @ViewBuilder
+    private var limitsSection: some View {
+        let items = liveProvider?.items ?? []
+        VStack(alignment: .leading, spacing: 6) {
+            Text("LIMITS")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+
+            if items.isEmpty {
+                Text(emptyLimitsMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 2)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(items) { item in
+                        UsageItemRow(item: item)
+                    }
+                }
+                .padding(.leading, -24)
+            }
+        }
+        .padding(.horizontal, SettingsDesign.rowHorizontalPadding)
+        .padding(.vertical, SettingsDesign.rowVerticalPadding)
+    }
+
+    private var emptyLimitsMessage: String {
+        if provider.keyConfig != nil {
+            return "Add an API key to start tracking."
+        }
+        return "No data yet — usage will appear after the next refresh."
+    }
+
+    private func apiKeySection(keyConfig: ProviderKeyConfig) -> some View {
         APIKeyInput(
             placeholder: keyConfig.placeholder,
             hint: keyConfig.hint,

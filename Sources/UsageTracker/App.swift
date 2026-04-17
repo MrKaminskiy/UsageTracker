@@ -7,7 +7,7 @@ struct UsageTrackerApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView(appState: appDelegate.appState)
+            EmptyView()
         }
     }
 }

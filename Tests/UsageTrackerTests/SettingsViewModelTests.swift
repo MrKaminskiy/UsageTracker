@@ -37,3 +37,22 @@ struct ConnectionStatusTests {
         #expect(status == .failed)
     }
 }
+
+@Suite("PinnedSelection round-trip")
+struct PinnedSelectionTests {
+
+    @Test("nil pinned item maps to .auto")
+    func nilToAuto() {
+        let selection = PinnedSelection(from: nil)
+        #expect(selection == .auto)
+        #expect(selection.asPinnedItem == nil)
+    }
+
+    @Test("pinned item round-trips")
+    func pinnedRoundTrip() {
+        let pin = PinnedItem(providerId: "claude", itemLabel: "Session")
+        let selection = PinnedSelection(from: pin)
+        #expect(selection == .pinned(providerId: "claude", itemLabel: "Session"))
+        #expect(selection.asPinnedItem == pin)
+    }
+}

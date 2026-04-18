@@ -72,3 +72,8 @@ make test
 - **Runway and Stability**: Providers are implemented but not yet verified. They are hidden by default. You can enable them in Settings.
 - **Cost estimate**: Reads `~/.claude/projects/*.jsonl` files. Accurate for Claude Code usage; does not include API usage outside Claude Code.
 - **macOS 13+ required**: The app uses SwiftUI features not available on earlier versions.
+
+## License
+
+Released under the MIT License. See [LICENSE](LICENSE) for details.
+

@@ -17,7 +17,7 @@ swift build
 
 ### Providers
 Located in `Sources/UsageTracker/Providers/`. Each provider fetches usage from a service:
-- **ClaudeProvider** - Reads from `~/.claude/statsig_cache/` (auto-detected)
+- **ClaudeProvider** - Reads OAuth credentials from macOS Keychain (`Claude Code-credentials`), falling back to `~/.claude/.credentials.json` for newer Claude Code CLI versions; calls `api.anthropic.com/api/oauth/usage`
 - **CursorProvider** - Reads from Cursor app cache (auto-detected)
 - **CodexProvider** - Reads from `~/.codex/` (auto-detected)
 - **OpenAIProvider** - Uses admin API key (`sk-admin-*`) for org spend, or project key for daily usage

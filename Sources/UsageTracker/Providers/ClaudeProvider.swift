@@ -42,8 +42,13 @@ actor ClaudeProvider {
 
     private let settingsURL = URL(string: "https://claude.ai/settings/usage")!
 
+    private enum CredentialSource {
+        case keychain
+        case file(URL)
+    }
+
     func fetchUsage() async throws -> Provider {
-        guard var credentials = loadCredentials() else {
+        guard let loaded = loadCredentials() else {
             return Provider(
                 id: "claude",
                 name: "Claude",
@@ -52,12 +57,14 @@ actor ClaudeProvider {
                 status: .notConnected(url: settingsURL)
             )
         }
+        var credentials = loaded.credentials
+        let source = loaded.source
 
         // Refresh token if needed
         if needsRefresh(credentials.claudeAiOauth) {
             if let refreshed = try? await refreshToken(credentials: &credentials) {
                 credentials.claudeAiOauth?.accessToken = refreshed
-                saveCredentials(credentials)
+                saveCredentials(credentials, to: source)
             }
         }
 
@@ -97,7 +104,7 @@ actor ClaudeProvider {
             // Try refresh and retry once
             if let refreshed = try? await refreshToken(credentials: &credentials) {
                 credentials.claudeAiOauth?.accessToken = refreshed
-                saveCredentials(credentials)
+                saveCredentials(credentials, to: source)
                 return try await fetchUsage() // Retry
             }
             return Provider(
@@ -181,7 +188,23 @@ actor ClaudeProvider {
         )
     }
 
-    private func loadCredentials() -> Credentials? {
+    private func loadCredentials() -> (credentials: Credentials, source: CredentialSource)? {
+        if let creds = loadFromKeychain() {
+            return (creds, .keychain)
+        }
+        let fileURL = credentialsFileURL()
+        if let creds = loadFromFile(fileURL) {
+            return (creds, .file(fileURL))
+        }
+        return nil
+    }
+
+    private func credentialsFileURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/.credentials.json")
+    }
+
+    private func loadFromKeychain() -> Credentials? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -201,19 +224,33 @@ actor ClaudeProvider {
         return credentials
     }
 
-    private func saveCredentials(_ credentials: Credentials) {
-        guard let data = try? JSONEncoder().encode(credentials) else { return }
+    private func loadFromFile(_ url: URL) -> Credentials? {
+        guard let data = try? Data(contentsOf: url),
+              let credentials = try? JSONDecoder().decode(Credentials.self, from: data) else {
+            return nil
+        }
+        return credentials
+    }
 
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService
-        ]
-
-        let attributes: [String: Any] = [
-            kSecValueData as String: data
-        ]
-
-        SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+    private func saveCredentials(_ credentials: Credentials, to source: CredentialSource) {
+        switch source {
+        case .keychain:
+            guard let data = try? JSONEncoder().encode(credentials) else { return }
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keychainService
+            ]
+            let attributes: [String: Any] = [
+                kSecValueData as String: data
+            ]
+            SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        case .file:
+            // Skip persisting to ~/.claude/.credentials.json — Claude Code CLI owns
+            // the file and stores fields beyond our schema (scopes, rateLimitTier)
+            // that a round-trip would strip. The refreshed access token is used
+            // in-memory for this session; Claude Code refreshes its own copy.
+            break
+        }
     }
 
     private func needsRefresh(_ oauth: Credentials.OAuthData?) -> Bool {

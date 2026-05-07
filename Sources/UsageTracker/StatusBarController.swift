@@ -18,8 +18,8 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func showSettings() {
         if let existingWindow = window, existingWindow.isVisible {
-            existingWindow.orderFrontRegardless()
-            existingWindow.makeKey()
+            NSApp.activate(ignoringOtherApps: true)
+            existingWindow.makeKeyAndOrderFront(nil)
             return
         }
 
@@ -46,8 +46,8 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
 
         self.window = newWindow
 
-        newWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        newWindow.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -67,8 +67,8 @@ class OnboardingWindowController: NSObject, NSWindowDelegate {
 
     func showOnboarding() {
         if let existingWindow = window, existingWindow.isVisible {
-            existingWindow.orderFrontRegardless()
-            existingWindow.makeKey()
+            NSApp.activate(ignoringOtherApps: true)
+            existingWindow.makeKeyAndOrderFront(nil)
             return
         }
 
@@ -87,8 +87,8 @@ class OnboardingWindowController: NSObject, NSWindowDelegate {
 
         self.window = newWindow
 
-        newWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        newWindow.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {

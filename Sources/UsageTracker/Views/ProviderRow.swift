@@ -113,6 +113,13 @@ struct ProviderRow: View {
                     Text(provider.name)
                         .font(.system(size: 13, weight: .medium))
 
+                    if provider.insights?.hasWarnings == true {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.orange)
+                            .help("Usage insights available — open Claude details")
+                    }
+
                     if let boost = provider.boostStatus {
                         HStack(spacing: 2) {
                             Text("2x")
@@ -164,6 +171,7 @@ struct ProviderRow: View {
             case .loaded:
                 Text("\(Int(provider.maxPercentage))%")
                     .font(.system(size: 11))
+                    .monospacedDigit()
                     .foregroundColor(.secondary)
             }
         }
@@ -207,7 +215,7 @@ struct UsageItemRow: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
-            .frame(width: 80, alignment: .leading)
+            .frame(width: 92, alignment: .leading)
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
@@ -247,12 +255,13 @@ struct UsageItemRow: View {
 
             Text(item.valueText ?? "\(Int(item.percentage))%")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundColor(item.percentage >= 85 ? item.color : .secondary)
                 .frame(minWidth: 32, alignment: .trailing)
                 .fixedSize(horizontal: true, vertical: false)
 
             Text(item.resetLabel ?? "")
                 .font(.system(size: 9))
+                .monospacedDigit()
                 .foregroundStyle(.tertiary)
                 .frame(width: 60, alignment: .trailing)
         }

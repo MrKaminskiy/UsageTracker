@@ -8,7 +8,7 @@ actor ClaudeProvider {
     private let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     private let scopes = "user:profile user:inference user:sessions:claude_code user:mcp_servers"
     private let refreshBufferMs: Double = 5 * 60 * 1000 // 5 minutes
-    private let costEstimator = ClaudeCostEstimator()
+    private let insightsAnalyzer = ClaudeInsightsAnalyzer()
 
     struct Credentials: Codable {
         var claudeAiOauth: OAuthData?
@@ -174,8 +174,8 @@ actor ClaudeProvider {
         let detector = Claude2xDetector.loadFromDisk()
         let boostStatus = detector.status()
 
-        // Cost estimation (caller controls visibility via showCostEstimate)
-        let costEstimate = await costEstimator.estimateCurrentMonth()
+        // Cost estimation + local usage insights (caller controls cost visibility via showCostEstimate)
+        let insights = await insightsAnalyzer.analyze()
 
         return Provider(
             id: "claude",
@@ -184,7 +184,7 @@ actor ClaudeProvider {
             items: items,
             status: items.isEmpty ? .error("No usage data") : .loaded,
             boostStatus: boostStatus,
-            costEstimate: costEstimate?.totalCost
+            costEstimate: insights?.monthlyCost
         )
     }
 

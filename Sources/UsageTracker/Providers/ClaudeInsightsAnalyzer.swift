@@ -172,4 +172,99 @@ actor ClaudeInsightsAnalyzer {
     private static func parseTimestamp(_ str: String) -> Date? {
         isoFormatterWithFractional.date(from: str) ?? isoFormatterBasic.date(from: str)
     }
+
+    // MARK: - File walk + incremental cache
+
+    private struct FileSummary {
+        let modDate: Date
+        let monthKey: String            // "yyyy-MM" the summary was computed for
+        let monthCost: Double           // cost of usage events within that month
+        let recentEvents: [TranscriptEvent]  // events within 25h of parse time
+    }
+
+    private var fileCache: [String: FileSummary] = [:]
+
+    func analyze(projectsDir: URL? = nil, now: Date = Date()) async -> ClaudeInsights? {
+        let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+
+        guard FileManager.default.fileExists(atPath: resolvedDir.path) else { return nil }
+
+        let calendar = Calendar.current
+        guard let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) else {
+            return nil
+        }
+        let monthKey = Self.monthKey(for: monthStart)
+        // Keep a 25h buffer so the 24h window and "today" are always fully covered.
+        let recentCutoff = now.addingTimeInterval(-25 * 3600)
+        // A file not touched since before both cutoffs can contribute nothing.
+        let walkCutoff = min(monthStart, recentCutoff)
+
+        let jsonlFiles: [(url: URL, modDate: Date)] = {
+            guard let enumerator = FileManager.default.enumerator(
+                at: resolvedDir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else { return [] }
+            var result: [(URL, Date)] = []
+            for case let fileURL as URL in enumerator {
+                guard fileURL.pathExtension == "jsonl" else { continue }
+                guard let resourceValues = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
+                      let modDate = resourceValues.contentModificationDate,
+                      modDate >= walkCutoff else { continue }
+                result.append((fileURL, modDate))
+            }
+            return result
+        }()
+
+        var totalCost: Double = 0
+        var recentEvents: [TranscriptEvent] = []
+
+        for (fileURL, modDate) in jsonlFiles {
+            let path = fileURL.path
+            let summary: FileSummary
+            if let cached = fileCache[path], cached.modDate == modDate, cached.monthKey == monthKey {
+                summary = cached
+            } else {
+                summary = Self.parseFile(at: fileURL, modDate: modDate, monthKey: monthKey,
+                                         monthStart: monthStart, now: now, recentCutoff: recentCutoff)
+                fileCache[path] = summary
+            }
+            totalCost += summary.monthCost
+            recentEvents.append(contentsOf: summary.recentEvents)
+        }
+
+        return Self.aggregate(recentEvents: recentEvents, monthlyCost: totalCost, now: now, calendar: calendar)
+    }
+
+    private static func parseFile(at url: URL, modDate: Date, monthKey: String,
+                                  monthStart: Date, now: Date, recentCutoff: Date) -> FileSummary {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+            return FileSummary(modDate: modDate, monthKey: monthKey, monthCost: 0, recentEvents: [])
+        }
+
+        var monthCost: Double = 0
+        var recentEvents: [TranscriptEvent] = []
+        content.enumerateLines { line, _ in
+            guard let event = parseEvent(line) else { return }
+            switch event {
+            case .usage(let u):
+                if u.timestamp >= monthStart && u.timestamp <= now {
+                    monthCost += costForTokens(model: u.model, input: u.input, output: u.output,
+                                               cacheWrite: u.cacheWrite, cacheRead: u.cacheRead)
+                }
+                if u.timestamp >= recentCutoff { recentEvents.append(event) }
+            case .patch(let p):
+                if p.timestamp >= recentCutoff { recentEvents.append(event) }
+            }
+        }
+        return FileSummary(modDate: modDate, monthKey: monthKey, monthCost: monthCost, recentEvents: recentEvents)
+    }
+
+    private static func monthKey(for monthStart: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM"
+        f.timeZone = .current
+        return f.string(from: monthStart)
+    }
 }

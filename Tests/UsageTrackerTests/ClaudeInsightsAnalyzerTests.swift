@@ -190,3 +190,108 @@ struct ClaudeInsightsAggregationTests {
         #expect(i.hasWarnings == true)
     }
 }
+
+@Suite("ClaudeInsightsAnalyzer file analysis")
+struct ClaudeInsightsAnalyzeTests {
+
+    func makeTempDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func isoNow(offsetHours: Double = 0) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: Date().addingTimeInterval(offsetHours * 3600))
+    }
+
+    @Test("Returns nil for missing directory")
+    func missingDir() async {
+        let analyzer = ClaudeInsightsAnalyzer()
+        let result = await analyzer.analyze(projectsDir: URL(fileURLWithPath: "/tmp/nope-\(UUID().uuidString)"))
+        #expect(result == nil)
+    }
+
+    @Test("Empty directory yields zero-cost insights with no data")
+    func emptyDir() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let analyzer = ClaudeInsightsAnalyzer()
+        let result = await analyzer.analyze(projectsDir: dir)
+        #expect(result != nil)
+        #expect(result?.monthlyCost == 0)
+        #expect(result?.contextShareOver150k == nil)
+        #expect(result?.today == nil)
+    }
+
+    @Test("Aggregates cost and insights across files, including subagents subdirectory")
+    func aggregatesFiles() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Main session file: 1M opus input = $15
+        let mainLine = """
+        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","isSidechain":false,"message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try mainLine.write(to: dir.appendingPathComponent("main.jsonl"), atomically: true, encoding: .utf8)
+
+        // Subagent file nested like real transcripts: <session>/subagents/agent-x.jsonl
+        let subDir = dir.appendingPathComponent("s1/subagents")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        let sideLine = """
+        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","isSidechain":true,"attributionAgent":"code-reviewer","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try sideLine.write(to: subDir.appendingPathComponent("agent-x.jsonl"), atomically: true, encoding: .utf8)
+
+        let analyzer = ClaudeInsightsAnalyzer()
+        let result = await analyzer.analyze(projectsDir: dir)
+        #expect(abs((result?.monthlyCost ?? 0) - 30.0) < 0.01)
+        // session s1: 50% sidechain tokens → subagent-heavy → 100% share
+        #expect(abs((result?.subagentShare ?? 0) - 100.0) < 0.01)
+        #expect(result?.subagents.first?.name == "code-reviewer")
+    }
+
+    @Test("Cache: unchanged file is not re-parsed; changed file is")
+    func cacheInvalidation() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fileURL = dir.appendingPathComponent("a.jsonl")
+
+        let line = """
+        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try line.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let analyzer = ClaudeInsightsAnalyzer()
+        let first = await analyzer.analyze(projectsDir: dir)
+        #expect(abs((first?.monthlyCost ?? 0) - 15.0) < 0.01)
+
+        // Second run without changes: same result (cache path exercised)
+        let second = await analyzer.analyze(projectsDir: dir)
+        #expect(abs((second?.monthlyCost ?? 0) - 15.0) < 0.01)
+
+        // Append another 1M-input line and bump mtime → re-parse picks it up
+        let appended = line + "\n" + line
+        try appended.write(to: fileURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: fileURL.path)
+
+        let third = await analyzer.analyze(projectsDir: dir)
+        #expect(abs((third?.monthlyCost ?? 0) - 30.0) < 0.01)
+    }
+
+    @Test("Malformed file mixed with valid file doesn't poison results")
+    func malformedFileSkipped() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data([0xFF, 0xFE, 0x00]).write(to: dir.appendingPathComponent("garbage.jsonl"))
+        let line = """
+        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","message":{"model":"claude-sonnet-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try line.write(to: dir.appendingPathComponent("good.jsonl"), atomically: true, encoding: .utf8)
+
+        let analyzer = ClaudeInsightsAnalyzer()
+        let result = await analyzer.analyze(projectsDir: dir)
+        #expect(abs((result?.monthlyCost ?? 0) - 3.0) < 0.01)
+    }
+}

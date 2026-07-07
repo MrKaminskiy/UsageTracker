@@ -6,6 +6,8 @@ struct ProviderRow: View {
     var isDisplayedInBar: Bool = false
     var isPinned: (String) -> Bool = { _ in false }
     var onTogglePin: ((String) -> Void)? = nil
+    var onOpenDetail: (() -> Void)? = nil
+    @State private var isCardHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -86,71 +88,85 @@ struct ProviderRow: View {
                         .stroke(Color.primary.opacity(0.06), lineWidth: 1)
                 )
         )
+        .onHover { hovering in
+            isCardHovered = hovering
+        }
     }
 
     private var providerHeader: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                provider.isExpanded.toggle()
+        HStack {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    provider.isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: provider.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .frame(width: 12)
+
+                    Image(systemName: provider.icon)
+                        .font(.system(size: 12))
+                        .foregroundColor(provider.displayColor)
+
+                    Text(provider.name)
+                        .font(.system(size: 13, weight: .medium))
+
+                    if let boost = provider.boostStatus {
+                        HStack(spacing: 2) {
+                            Text("2x")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                            if let label = boost.nextTransitionLabel {
+                                Text(label)
+                                    .font(.system(size: 8, weight: .medium))
+                            }
+                        }
+                        .foregroundColor(boost.isActive
+                            ? Color(red: 0.204, green: 0.780, blue: 0.349)  // match app green
+                            : .secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(boost.isActive
+                                    ? Color(red: 0.204, green: 0.780, blue: 0.349).opacity(0.12)
+                                    : Color.primary.opacity(0.04))
+                        )
+                    }
+
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
-        } label: {
-            HStack {
-                Image(systemName: provider.isExpanded ? "chevron.down" : "chevron.right")
+            .buttonStyle(.plain)
+
+            if let onOpenDetail, isCardHovered {
+                Button(action: onOpenDetail) {
+                    Image(systemName: "chevron.right.circle")
+                }
+                .buttonStyle(.icon)
+                .help("Claude details & insights")
+            }
+
+            switch provider.status {
+            case .loading:
+                ProgressView()
+                    .scaleEffect(0.6)
+            case .notConnected:
+                Text("Not connected")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
-                    .frame(width: 12)
-
-                Image(systemName: provider.icon)
-                    .font(.system(size: 12))
-                    .foregroundColor(provider.displayColor)
-
-                Text(provider.name)
-                    .font(.system(size: 13, weight: .medium))
-
-                if let boost = provider.boostStatus {
-                    HStack(spacing: 2) {
-                        Text("2x")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
-                        if let label = boost.nextTransitionLabel {
-                            Text(label)
-                                .font(.system(size: 8, weight: .medium))
-                        }
-                    }
-                    .foregroundColor(boost.isActive
-                        ? Color(red: 0.204, green: 0.780, blue: 0.349)  // match app green
-                        : .secondary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(boost.isActive
-                                ? Color(red: 0.204, green: 0.780, blue: 0.349).opacity(0.12)
-                                : Color.primary.opacity(0.04))
-                    )
-                }
-
-                Spacer()
-
-                switch provider.status {
-                case .loading:
-                    ProgressView()
-                        .scaleEffect(0.6)
-                case .notConnected:
-                    Text("Not connected")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                case .error(let message):
-                    Text(message)
-                        .font(.system(size: 10))
-                        .foregroundColor(.orange)
-                case .loaded:
-                    Text("\(Int(provider.maxPercentage))%")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
+            case .error(let message):
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundColor(.orange)
+            case .loaded:
+                Text("\(Int(provider.maxPercentage))%")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
         }
-        .buttonStyle(.plain)
     }
 
     private static func formatCost(_ cost: Double) -> String {

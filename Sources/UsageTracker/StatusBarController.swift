@@ -121,9 +121,10 @@ class StatusBarController: NSObject, ObservableObject {
 
         // Create popover for main content
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 400)
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: contentView)
+        let hosting = NSHostingController(rootView: contentView)
+        hosting.sizingOptions = .preferredContentSize
+        popover.contentViewController = hosting
 
         // Create right-click context menu
         contextMenu = NSMenu()

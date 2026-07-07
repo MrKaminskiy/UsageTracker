@@ -29,7 +29,33 @@ extension ButtonStyle where Self == IconButtonStyle {
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
 
+    private enum Screen: Equatable {
+        case list
+        case claudeDetail
+    }
+
+    @State private var screen: Screen = .list
+
     var body: some View {
+        Group {
+            switch screen {
+            case .list:
+                listScreen
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            case .claudeDetail:
+                ClaudeDetailView(appState: appState) {
+                    withAnimation(.easeInOut(duration: 0.2)) { screen = .list }
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: screen)
+        .task {
+            await appState.refresh()
+        }
+    }
+
+    private var listScreen: some View {
         VStack(alignment: .leading, spacing: 0) {
             if appState.visibleProviders.isEmpty && !appState.isLoading {
                 emptyState
@@ -44,9 +70,6 @@ struct MenuBarView: View {
         }
         .padding(12)
         .frame(width: 340)
-        .task {
-            await appState.refresh()
-        }
     }
 
     private var emptyState: some View {
@@ -97,7 +120,10 @@ struct MenuBarView: View {
                         },
                         onTogglePin: { itemLabel in
                             appState.togglePin(providerId: provider.id, itemLabel: itemLabel)
-                        }
+                        },
+                        onOpenDetail: provider.id == "claude" ? {
+                            withAnimation(.easeInOut(duration: 0.2)) { screen = .claudeDetail }
+                        } : nil
                     )
                 }
             }

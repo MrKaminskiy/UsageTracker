@@ -135,39 +135,52 @@ actor ClaudeProvider {
         var items: [UsageItem] = []
 
         if let fiveHour = usage.five_hour, let utilization = fiveHour.utilization {
+            let resetDate = parseResetDate(fiveHour.resets_at)
             items.append(UsageItem(
                 label: "Session",
                 current: utilization,
                 limit: 100,
-                resetLabel: formatResetTime(fiveHour.resets_at)
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
             ))
         }
 
         if let sevenDay = usage.seven_day, let utilization = sevenDay.utilization {
+            let resetDate = parseResetDate(sevenDay.resets_at)
             items.append(UsageItem(
                 label: "Weekly",
                 current: utilization,
                 limit: 100,
-                resetLabel: formatResetTime(sevenDay.resets_at)
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
             ))
         }
 
         if let sonnet = usage.seven_day_sonnet, let utilization = sonnet.utilization {
+            let resetDate = parseResetDate(sonnet.resets_at)
             items.append(UsageItem(
                 label: "Sonnet",
                 current: utilization,
                 limit: 100,
-                resetLabel: formatResetTime(sonnet.resets_at)
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
             ))
         }
 
         if let opus = usage.seven_day_opus, let utilization = opus.utilization {
+            let resetDate = parseResetDate(opus.resets_at)
             items.append(UsageItem(
                 label: "Opus",
                 current: utilization,
                 limit: 100,
-                resetLabel: formatResetTime(opus.resets_at)
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
             ))
+        }
+
+        if let extraItem = Self.extraCreditsItem(from: usage.extra_usage) {
+            Log.info("Claude extra usage raw values: used=\(usage.extra_usage?.used_credits ?? -1) limit=\(usage.extra_usage?.monthly_limit ?? -1)")
+            items.append(extraItem)
         }
 
         // 2x detection
@@ -184,7 +197,9 @@ actor ClaudeProvider {
             items: items,
             status: items.isEmpty ? .error("No usage data") : .loaded,
             boostStatus: boostStatus,
-            costEstimate: insights?.monthlyCost
+            costEstimate: insights?.monthlyCost,
+            planLabel: Self.planLabel(from: oauth.subscriptionType),
+            insights: insights
         )
     }
 
@@ -301,25 +316,51 @@ actor ClaudeProvider {
         return refreshResponse.access_token
     }
 
-    private func formatResetTime(_ isoString: String?) -> String? {
-        guard let isoString = isoString else { return nil }
+    static func extraCreditsItem(from extra: UsageResponse.ExtraUsage?) -> UsageItem? {
+        guard let extra, extra.is_enabled == true,
+              let limit = extra.monthly_limit, limit > 0 else { return nil }
+        let used = extra.used_credits ?? 0
+        return UsageItem(
+            label: "Extra credits",
+            current: used,
+            limit: limit,
+            resetLabel: nil,
+            valueText: "\(formatDollars(used)) of \(formatDollars(limit))"
+        )
+    }
 
+    static func formatDollars(_ value: Double) -> String {
+        value == value.rounded()
+            ? String(format: "$%.0f", value)
+            : String(format: "$%.2f", value)
+    }
+
+    static func planLabel(from subscriptionType: String?) -> String? {
+        guard let type = subscriptionType, !type.isEmpty else { return nil }
+        switch type.lowercased() {
+        case "max": return "Max"
+        case "pro": return "Pro"
+        case "team": return "Team"
+        case "enterprise": return "Enterprise"
+        default: return type.capitalized
+        }
+    }
+
+    private func parseResetDate(_ isoString: String?) -> Date? {
+        guard let isoString = isoString else { return nil }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString)
+    }
 
-        guard let date = formatter.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString) else {
-            return nil
-        }
-
+    private func relativeResetLabel(_ date: Date?) -> String? {
+        guard let date = date else { return nil }
         let diff = date.timeIntervalSinceNow
         if diff <= 0 { return nil }
-
         let hours = Int(diff / 3600)
         let minutes = Int((diff.truncatingRemainder(dividingBy: 3600)) / 60)
-
         if hours > 24 {
-            let days = hours / 24
-            return "\(days)d"
+            return "\(hours / 24)d"
         } else if hours > 0 {
             return "\(hours)h \(minutes)m"
         } else {

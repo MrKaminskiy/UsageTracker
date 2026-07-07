@@ -47,3 +47,41 @@ struct ClaudeProviderCredentialsTests {
         #expect(creds.claudeAiOauth?.expiresAt == nil)
     }
 }
+
+@Suite("ClaudeProvider extra credits and plan label")
+struct ClaudeProviderExtrasTests {
+
+    @Test("Extra credits item maps used/limit and formats dollars")
+    func extraCreditsMapping() {
+        let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 12, monthly_limit: 50)
+        let item = ClaudeProvider.extraCreditsItem(from: extra)
+        #expect(item != nil)
+        #expect(item?.label == "Extra credits")
+        #expect(item?.valueText == "$12 of $50")
+        #expect(abs((item?.percentage ?? 0) - 24.0) < 0.01)
+    }
+
+    @Test("Extra credits hidden when disabled, missing, or zero limit")
+    func extraCreditsHidden() {
+        #expect(ClaudeProvider.extraCreditsItem(from: nil) == nil)
+        #expect(ClaudeProvider.extraCreditsItem(from: .init(is_enabled: false, used_credits: 5, monthly_limit: 50)) == nil)
+        #expect(ClaudeProvider.extraCreditsItem(from: .init(is_enabled: true, used_credits: 5, monthly_limit: 0)) == nil)
+        #expect(ClaudeProvider.extraCreditsItem(from: .init(is_enabled: true, used_credits: 5, monthly_limit: nil)) == nil)
+    }
+
+    @Test("Fractional dollars keep two decimals")
+    func extraCreditsFractional() {
+        let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 12.5, monthly_limit: 50)
+        #expect(ClaudeProvider.extraCreditsItem(from: extra)?.valueText == "$12.50 of $50")
+    }
+
+    @Test("Plan label mapping")
+    func planLabels() {
+        #expect(ClaudeProvider.planLabel(from: "max") == "Max")
+        #expect(ClaudeProvider.planLabel(from: "pro") == "Pro")
+        #expect(ClaudeProvider.planLabel(from: "enterprise") == "Enterprise")
+        #expect(ClaudeProvider.planLabel(from: "some_new_tier") == "Some_new_tier".capitalized)
+        #expect(ClaudeProvider.planLabel(from: nil) == nil)
+        #expect(ClaudeProvider.planLabel(from: "") == nil)
+    }
+}

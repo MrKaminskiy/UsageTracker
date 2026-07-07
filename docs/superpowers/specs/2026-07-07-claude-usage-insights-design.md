@@ -66,10 +66,14 @@ struct TodayStats: Equatable, Sendable {
 - **Subagent-heavy share**: requests with `isSidechain: true` are subagent
   requests. A session is subagent-heavy when >25% of its tokens are sidechain
   tokens. Metric = those sessions' token share of all last-24h tokens.
-- **Skills**: `tool_use` blocks invoking the `Skill` tool. Attribution: tokens
-  from the invocation to the end of that user turn belong to the skill.
-- **Subagents**: sidechain tokens grouped by the spawning `Task`/`Agent` tool
-  call's `subagent_type`; sidechains that can't be matched go into "other".
+- **Skills**: assistant transcript lines carry an `attributionSkill` field
+  naming the active skill — group token usage by it directly. (Verified in real
+  transcripts; more accurate than turn-scoped heuristics.)
+- **Subagents**: sidechain assistant lines carry an `attributionAgent` field
+  (e.g. "code-reviewer") — group sidechain tokens by it; lines without it go
+  into "other". Subagent transcripts live in
+  `<project>/<session>/subagents/agent-*.jsonl`, which the recursive directory
+  walk already includes.
 - **Today stats**: sessions/tokens/cost since local midnight; lines
   added/removed parsed from `Edit`/`Write` tool results where present.
 

@@ -111,12 +111,19 @@ struct MenuBarView: View {
                     await appState.refresh()
                 }
             } label: {
-                Image(systemName: "arrow.clockwise")
-                    .rotationEffect(.degrees(appState.isLoading ? 360 : 0))
-                    .animation(
-                        appState.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
-                        value: appState.isLoading
-                    )
+                // Angle is derived from the clock each frame instead of a persistent
+                // repeatForever animation: an in-flight repeating animation captures
+                // footer layout shifts (providers/"Updated" text changing mid-refresh)
+                // and leaves the icon permanently offset.
+                TimelineView(.animation(minimumInterval: nil, paused: !appState.isLoading)) { context in
+                    Image(systemName: "arrow.clockwise")
+                        .rotationEffect(.degrees(
+                            appState.isLoading
+                                ? context.date.timeIntervalSinceReferenceDate
+                                    .truncatingRemainder(dividingBy: 1) * 360
+                                : 0
+                        ))
+                }
             }
             .buttonStyle(.icon)
             .disabled(appState.isLoading)

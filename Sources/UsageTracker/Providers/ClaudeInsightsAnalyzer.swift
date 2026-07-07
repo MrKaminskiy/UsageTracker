@@ -73,6 +73,78 @@ actor ClaudeInsightsAnalyzer {
         return nil
     }
 
+    static func aggregate(recentEvents: [TranscriptEvent], monthlyCost: Double, now: Date, calendar: Calendar = .current) -> ClaudeInsights {
+        var insights = ClaudeInsights(monthlyCost: monthlyCost)
+
+        let windowStart = now.addingTimeInterval(-24 * 3600)
+        var usage24: [UsageEvent] = []
+        var patches: [PatchEvent] = []
+        for event in recentEvents {
+            switch event {
+            case .usage(let u) where u.timestamp >= windowStart && u.timestamp <= now:
+                usage24.append(u)
+            case .patch(let p) where p.timestamp <= now:
+                patches.append(p)
+            default:
+                break
+            }
+        }
+
+        let totalTokens = usage24.reduce(0) { $0 + $1.totalTokens }
+        if totalTokens > 0 {
+            let total = Double(totalTokens)
+
+            let overTokens = usage24.filter { $0.contextTokens > 150_000 }.reduce(0) { $0 + $1.totalTokens }
+            insights.contextShareOver150k = Double(overTokens) / total * 100
+
+            var sessionTokens: [String: Int] = [:]
+            var sessionSidechainTokens: [String: Int] = [:]
+            for u in usage24 {
+                guard let sid = u.sessionId else { continue }
+                sessionTokens[sid, default: 0] += u.totalTokens
+                if u.isSidechain { sessionSidechainTokens[sid, default: 0] += u.totalTokens }
+            }
+            let heavyTokens = sessionTokens
+                .filter { sid, tokens in Double(sessionSidechainTokens[sid] ?? 0) / Double(tokens) > 0.25 }
+                .values.reduce(0, +)
+            insights.subagentShare = Double(heavyTokens) / total * 100
+
+            var skillTokens: [String: Int] = [:]
+            var agentTokens: [String: Int] = [:]
+            for u in usage24 {
+                if let skill = u.skill { skillTokens[skill, default: 0] += u.totalTokens }
+                if u.isSidechain { agentTokens[u.agent ?? "other", default: 0] += u.totalTokens }
+            }
+            insights.skills = topShares(skillTokens, total: total)
+            insights.subagents = topShares(agentTokens, total: total)
+        }
+
+        let dayStart = calendar.startOfDay(for: now)
+        let todayUsage = usage24.filter { $0.timestamp >= dayStart }
+        let todayPatches = patches.filter { $0.timestamp >= dayStart }
+        if !todayUsage.isEmpty || !todayPatches.isEmpty {
+            var today = TodayStats()
+            for u in todayUsage {
+                today.cost += costForTokens(model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead)
+                today.totalTokens += u.totalTokens
+            }
+            today.sessionCount = Set(todayUsage.compactMap { $0.isSidechain ? nil : $0.sessionId }).count
+            today.linesAdded = todayPatches.reduce(0) { $0 + $1.linesAdded }
+            today.linesRemoved = todayPatches.reduce(0) { $0 + $1.linesRemoved }
+            insights.today = today
+        }
+
+        return insights
+    }
+
+    private static func topShares(_ tokensByName: [String: Int], total: Double) -> [UsageShare] {
+        tokensByName
+            .map { UsageShare(name: $0.key, share: Double($0.value) / total * 100) }
+            .sorted { $0.share != $1.share ? $0.share > $1.share : $0.name < $1.name }
+            .prefix(5)
+            .map { $0 }
+    }
+
     // MARK: - Private
 
     private static func pricingForModel(_ model: String) -> ModelPricing {

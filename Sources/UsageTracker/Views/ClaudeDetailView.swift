@@ -154,20 +154,23 @@ struct ClaudeDetailView: View {
 
     private func insightsSection(_ insights: ClaudeInsights) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Insights · last 24h · approx.")
+            sectionHeader("Insights · last 24h")
+            Text("approximate · based on local sessions on this Mac")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
 
             let contextWarning = (insights.contextShareOver150k ?? 0) >= ClaudeInsights.contextWarningThreshold
             let subagentWarning = (insights.subagentShare ?? 0) >= ClaudeInsights.subagentWarningThreshold
 
             if contextWarning, let share = insights.contextShareOver150k {
                 insightRow(
-                    stat: "\(Int(share))% of usage at >150k context",
+                    stat: "\(Int(share.rounded()))% of usage at >150k context",
                     hint: "/compact mid-task, /clear between tasks"
                 )
             }
             if subagentWarning, let share = insights.subagentShare {
                 insightRow(
-                    stat: "\(Int(share))% from subagent-heavy sessions",
+                    stat: "\(Int(share.rounded()))% from subagent-heavy sessions",
                     hint: "Be deliberate about spawning subagents"
                 )
             }
@@ -224,7 +227,7 @@ struct ClaudeDetailView: View {
                         .truncationMode(.middle)
                         .help(share.name)
                     Spacer(minLength: 4)
-                    Text(share.share < 1 ? "<1%" : "\(Int(share.share))%")
+                    Text(share.share < 1 ? "<1%" : "\(Int(share.share.rounded()))%")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
@@ -236,7 +239,9 @@ struct ClaudeDetailView: View {
     private func todaySection(_ today: TodayStats) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             sectionHeader("Today")
-            Text("\(ClaudeProvider.formatDollars(today.cost.rounded(toPlaces: 2))) est · \(today.sessionCount) session\(today.sessionCount == 1 ? "" : "s")")
+            Text(appState.config.showCostEstimate
+                 ? "\(ClaudeProvider.formatDollars(today.cost.rounded(toPlaces: 2))) est · \(today.sessionCount) session\(today.sessionCount == 1 ? "" : "s")"
+                 : "\(today.sessionCount) session\(today.sessionCount == 1 ? "" : "s")")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .monospacedDigit()

@@ -148,12 +148,13 @@ struct ProviderRow: View {
             }
             .buttonStyle(.plain)
 
-            if let onOpenDetail, isCardHovered {
+            if let onOpenDetail {
                 Button(action: onOpenDetail) {
                     Image(systemName: "chevron.right.circle")
                 }
                 .buttonStyle(.icon)
                 .help("Claude details & insights")
+                .opacity(isCardHovered ? 1 : 0)
             }
 
             switch provider.status {

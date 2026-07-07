@@ -50,6 +50,7 @@ struct MenuBarView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: screen)
+        .onAppear { screen = .list }
         .task {
             await appState.refresh()
         }

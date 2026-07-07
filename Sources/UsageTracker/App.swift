@@ -164,6 +164,8 @@ class AppState: ObservableObject {
                 case .loading:
                     break
                 }
+            } else {
+                Log.error("  \(name): fetch failed (transient) — keeping last-known data")
             }
         }
 

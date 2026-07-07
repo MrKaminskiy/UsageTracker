@@ -165,7 +165,7 @@ struct ClaudeInsightsAggregationTests {
         #expect(today != nil)
         #expect(today?.sessionCount == 2)                      // A and B; sidechain line doesn't add
         #expect(today?.totalTokens == 1_001_000)
-        #expect(abs((today?.cost ?? 0) - 75.0) < 0.1)          // 1M opus output tokens
+        #expect(abs((today?.cost ?? 0) - 75.075) < 0.0001)     // 1M opus output ($75) + two 500-output events (~$0.0375 each)
         #expect(today?.linesAdded == 296)
         #expect(today?.linesRemoved == 6)
     }
@@ -200,25 +200,31 @@ struct ClaudeInsightsAnalyzeTests {
         return dir
     }
 
-    func isoNow(offsetHours: Double = 0) -> String {
+    /// Formats `date` as a fractional-second ISO8601 string. Callers should pass a date
+    /// safely in the past (relative to the `now` they'll hand to `analyze`) so that
+    /// ISO8601DateFormatter's ~50%-of-the-time rounding-up of fractional seconds can never
+    /// push the fixture timestamp past `now` and get it dropped by `timestamp <= now` filters.
+    func iso(_ date: Date) -> String {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: Date().addingTimeInterval(offsetHours * 3600))
+        return f.string(from: date)
     }
 
     @Test("Returns nil for missing directory")
     func missingDir() async {
+        let now = Date()
         let analyzer = ClaudeInsightsAnalyzer()
-        let result = await analyzer.analyze(projectsDir: URL(fileURLWithPath: "/tmp/nope-\(UUID().uuidString)"))
+        let result = await analyzer.analyze(projectsDir: URL(fileURLWithPath: "/tmp/nope-\(UUID().uuidString)"), now: now)
         #expect(result == nil)
     }
 
     @Test("Empty directory yields zero-cost insights with no data")
     func emptyDir() async throws {
+        let now = Date()
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let analyzer = ClaudeInsightsAnalyzer()
-        let result = await analyzer.analyze(projectsDir: dir)
+        let result = await analyzer.analyze(projectsDir: dir, now: now)
         #expect(result != nil)
         #expect(result?.monthlyCost == 0)
         #expect(result?.contextShareOver150k == nil)
@@ -227,12 +233,13 @@ struct ClaudeInsightsAnalyzeTests {
 
     @Test("Aggregates cost and insights across files, including subagents subdirectory")
     func aggregatesFiles() async throws {
+        let now = Date()
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
         // Main session file: 1M opus input = $15
         let mainLine = """
-        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","isSidechain":false,"message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        {"type":"assistant","timestamp":"\(iso(now.addingTimeInterval(-60)))","sessionId":"s1","isSidechain":false,"message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
         """
         try mainLine.write(to: dir.appendingPathComponent("main.jsonl"), atomically: true, encoding: .utf8)
 
@@ -240,12 +247,12 @@ struct ClaudeInsightsAnalyzeTests {
         let subDir = dir.appendingPathComponent("s1/subagents")
         try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
         let sideLine = """
-        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","isSidechain":true,"attributionAgent":"code-reviewer","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        {"type":"assistant","timestamp":"\(iso(now.addingTimeInterval(-60)))","sessionId":"s1","isSidechain":true,"attributionAgent":"code-reviewer","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
         """
         try sideLine.write(to: subDir.appendingPathComponent("agent-x.jsonl"), atomically: true, encoding: .utf8)
 
         let analyzer = ClaudeInsightsAnalyzer()
-        let result = await analyzer.analyze(projectsDir: dir)
+        let result = await analyzer.analyze(projectsDir: dir, now: now)
         #expect(abs((result?.monthlyCost ?? 0) - 30.0) < 0.01)
         // session s1: 50% sidechain tokens → subagent-heavy → 100% share
         #expect(abs((result?.subagentShare ?? 0) - 100.0) < 0.01)
@@ -254,21 +261,22 @@ struct ClaudeInsightsAnalyzeTests {
 
     @Test("Cache: unchanged file is not re-parsed; changed file is")
     func cacheInvalidation() async throws {
+        let now = Date()
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let fileURL = dir.appendingPathComponent("a.jsonl")
 
         let line = """
-        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        {"type":"assistant","timestamp":"\(iso(now.addingTimeInterval(-60)))","sessionId":"s1","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
         """
         try line.write(to: fileURL, atomically: true, encoding: .utf8)
 
         let analyzer = ClaudeInsightsAnalyzer()
-        let first = await analyzer.analyze(projectsDir: dir)
+        let first = await analyzer.analyze(projectsDir: dir, now: now)
         #expect(abs((first?.monthlyCost ?? 0) - 15.0) < 0.01)
 
         // Second run without changes: same result (cache path exercised)
-        let second = await analyzer.analyze(projectsDir: dir)
+        let second = await analyzer.analyze(projectsDir: dir, now: now)
         #expect(abs((second?.monthlyCost ?? 0) - 15.0) < 0.01)
 
         // Append another 1M-input line and bump mtime → re-parse picks it up
@@ -276,22 +284,52 @@ struct ClaudeInsightsAnalyzeTests {
         try appended.write(to: fileURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: fileURL.path)
 
-        let third = await analyzer.analyze(projectsDir: dir)
+        let third = await analyzer.analyze(projectsDir: dir, now: now)
         #expect(abs((third?.monthlyCost ?? 0) - 30.0) < 0.01)
+    }
+
+    @Test("Cache: same mtime but different size (content) is re-parsed")
+    func cacheInvalidatesOnSizeChange() async throws {
+        let now = Date()
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fileURL = dir.appendingPathComponent("a.jsonl")
+
+        let line = """
+        {"type":"assistant","timestamp":"\(iso(now.addingTimeInterval(-60)))","sessionId":"s1","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        """
+        try line.write(to: fileURL, atomically: true, encoding: .utf8)
+        let fixedModDate = Date().addingTimeInterval(-30)
+        try FileManager.default.setAttributes([.modificationDate: fixedModDate], ofItemAtPath: fileURL.path)
+
+        let analyzer = ClaudeInsightsAnalyzer()
+        let first = await analyzer.analyze(projectsDir: dir, now: now)
+        #expect(abs((first?.monthlyCost ?? 0) - 15.0) < 0.01)
+
+        // Rewrite with different content length (two lines instead of one) but force the
+        // SAME modification date — only file size differs, so a modDate-only cache key
+        // would wrongly serve the stale cached summary.
+        let appended = line + "\n" + line
+        try appended.write(to: fileURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: fixedModDate], ofItemAtPath: fileURL.path)
+
+        let second = await analyzer.analyze(projectsDir: dir, now: now)
+        #expect(abs((second?.monthlyCost ?? 0) - 30.0) < 0.01)
     }
 
     @Test("Malformed file mixed with valid file doesn't poison results")
     func malformedFileSkipped() async throws {
+        let now = Date()
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         try Data([0xFF, 0xFE, 0x00]).write(to: dir.appendingPathComponent("garbage.jsonl"))
         let line = """
-        {"type":"assistant","timestamp":"\(isoNow())","sessionId":"s1","message":{"model":"claude-sonnet-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+        {"type":"assistant","timestamp":"\(iso(now.addingTimeInterval(-60)))","sessionId":"s1","message":{"model":"claude-sonnet-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
         """
         try line.write(to: dir.appendingPathComponent("good.jsonl"), atomically: true, encoding: .utf8)
 
         let analyzer = ClaudeInsightsAnalyzer()
-        let result = await analyzer.analyze(projectsDir: dir)
+        let result = await analyzer.analyze(projectsDir: dir, now: now)
         #expect(abs((result?.monthlyCost ?? 0) - 3.0) < 0.01)
     }
 }

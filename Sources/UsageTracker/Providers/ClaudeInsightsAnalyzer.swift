@@ -81,7 +81,8 @@ actor ClaudeInsightsAnalyzer {
         var patches: [PatchEvent] = []
         for event in recentEvents {
             switch event {
-            case .usage(let u) where u.timestamp >= windowStart && u.timestamp <= now:
+            // +1s: transcript timestamps are ms-rounded and can land slightly ahead of our clock
+            case .usage(let u) where u.timestamp >= windowStart && u.timestamp <= now.addingTimeInterval(1):
                 usage24.append(u)
             case .patch(let p) where p.timestamp <= now:
                 patches.append(p)
@@ -177,6 +178,7 @@ actor ClaudeInsightsAnalyzer {
 
     private struct FileSummary {
         let modDate: Date
+        let size: Int
         let monthKey: String            // "yyyy-MM" the summary was computed for
         let monthCost: Double           // cost of usage events within that month
         let recentEvents: [TranscriptEvent]  // events within 25h of parse time
@@ -200,19 +202,20 @@ actor ClaudeInsightsAnalyzer {
         // A file not touched since before both cutoffs can contribute nothing.
         let walkCutoff = min(monthStart, recentCutoff)
 
-        let jsonlFiles: [(url: URL, modDate: Date)] = {
+        let jsonlFiles: [(url: URL, modDate: Date, size: Int)] = {
             guard let enumerator = FileManager.default.enumerator(
                 at: resolvedDir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
                 options: [.skipsHiddenFiles]
             ) else { return [] }
-            var result: [(URL, Date)] = []
+            var result: [(URL, Date, Int)] = []
             for case let fileURL as URL in enumerator {
                 guard fileURL.pathExtension == "jsonl" else { continue }
-                guard let resourceValues = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
+                guard let resourceValues = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
                       let modDate = resourceValues.contentModificationDate,
                       modDate >= walkCutoff else { continue }
-                result.append((fileURL, modDate))
+                let size = resourceValues.fileSize ?? 0
+                result.append((fileURL, modDate, size))
             }
             return result
         }()
@@ -220,27 +223,32 @@ actor ClaudeInsightsAnalyzer {
         var totalCost: Double = 0
         var recentEvents: [TranscriptEvent] = []
 
-        for (fileURL, modDate) in jsonlFiles {
+        for (fileURL, modDate, size) in jsonlFiles {
             let path = fileURL.path
             let summary: FileSummary
-            if let cached = fileCache[path], cached.modDate == modDate, cached.monthKey == monthKey {
+            if let cached = fileCache[path], cached.modDate == modDate, cached.size == size, cached.monthKey == monthKey {
                 summary = cached
             } else {
-                summary = Self.parseFile(at: fileURL, modDate: modDate, monthKey: monthKey,
+                summary = Self.parseFile(at: fileURL, modDate: modDate, size: size, monthKey: monthKey,
                                          monthStart: monthStart, now: now, recentCutoff: recentCutoff)
                 fileCache[path] = summary
             }
             totalCost += summary.monthCost
-            recentEvents.append(contentsOf: summary.recentEvents)
+            // A file whose mtime is older than the recent cutoff cannot contain in-window
+            // events (event timestamps <= file mtime) — skip re-appending dead events for
+            // every month-old file on each refresh.
+            if modDate >= recentCutoff {
+                recentEvents.append(contentsOf: summary.recentEvents)
+            }
         }
 
         return Self.aggregate(recentEvents: recentEvents, monthlyCost: totalCost, now: now, calendar: calendar)
     }
 
-    private static func parseFile(at url: URL, modDate: Date, monthKey: String,
+    private static func parseFile(at url: URL, modDate: Date, size: Int, monthKey: String,
                                   monthStart: Date, now: Date, recentCutoff: Date) -> FileSummary {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return FileSummary(modDate: modDate, monthKey: monthKey, monthCost: 0, recentEvents: [])
+            return FileSummary(modDate: modDate, size: size, monthKey: monthKey, monthCost: 0, recentEvents: [])
         }
 
         var monthCost: Double = 0
@@ -249,7 +257,8 @@ actor ClaudeInsightsAnalyzer {
             guard let event = parseEvent(line) else { return }
             switch event {
             case .usage(let u):
-                if u.timestamp >= monthStart && u.timestamp <= now {
+                // +1s: transcript timestamps are ms-rounded and can land slightly ahead of our clock
+                if u.timestamp >= monthStart && u.timestamp <= now.addingTimeInterval(1) {
                     monthCost += costForTokens(model: u.model, input: u.input, output: u.output,
                                                cacheWrite: u.cacheWrite, cacheRead: u.cacheRead)
                 }
@@ -258,7 +267,7 @@ actor ClaudeInsightsAnalyzer {
                 if p.timestamp >= recentCutoff { recentEvents.append(event) }
             }
         }
-        return FileSummary(modDate: modDate, monthKey: monthKey, monthCost: monthCost, recentEvents: recentEvents)
+        return FileSummary(modDate: modDate, size: size, monthKey: monthKey, monthCost: monthCost, recentEvents: recentEvents)
     }
 
     private static func monthKey(for monthStart: Date) -> String {

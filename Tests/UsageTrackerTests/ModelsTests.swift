@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import UsageTracker
 
@@ -16,16 +17,30 @@ struct UsageItemTests {
         #expect(item.percentage == 0.0)
     }
 
-    @Test("Color thresholds based on percentage")
+    @Test("Color thresholds: green below 60, amber 60..<85, red 85+")
     func usageItemColor() {
-        let low = UsageItem(label: "Low", current: 30, limit: 100, resetLabel: nil)
-        let mid = UsageItem(label: "Mid", current: 65, limit: 100, resetLabel: nil)
-        let high = UsageItem(label: "High", current: 85, limit: 100, resetLabel: nil)
+        let green = UsageItem(label: "G", current: 59, limit: 100, resetLabel: nil)
+        let amber = UsageItem(label: "A", current: 60, limit: 100, resetLabel: nil)
+        let amberHigh = UsageItem(label: "AH", current: 84, limit: 100, resetLabel: nil)
+        let red = UsageItem(label: "R", current: 85, limit: 100, resetLabel: nil)
 
-        // Colors are custom gradients, not system colors — verify they differ by threshold
-        #expect(low.color != mid.color)
-        #expect(mid.color != high.color)
-        #expect(low.color != high.color)
+        #expect(green.color != amber.color)
+        #expect(amber.color == amberHigh.color)
+        #expect(amberHigh.color != red.color)
+        #expect(green.color != red.color)
+    }
+
+    @Test("UsageItem valueText and resetsAt default to nil and are settable")
+    func usageItemNewFields() {
+        let plain = UsageItem(label: "T", current: 1, limit: 100, resetLabel: nil)
+        #expect(plain.valueText == nil)
+        #expect(plain.resetsAt == nil)
+
+        let date = Date()
+        let rich = UsageItem(label: "T", current: 12, limit: 50, resetLabel: nil, resetsAt: date, valueText: "$12 of $50")
+        #expect(rich.valueText == "$12 of $50")
+        #expect(rich.resetsAt == date)
+        #expect(abs(rich.percentage - 24.0) < 0.01)
     }
 }
 
@@ -51,6 +66,13 @@ struct ProviderTests {
     func providerEmptyItems() {
         let provider = Provider(id: "test", name: "Test", icon: "star", items: [], status: .loaded)
         #expect(provider.maxPercentage == 0.0)
+    }
+
+    @Test("Provider planLabel and insights default to nil")
+    func providerNewFields() {
+        let provider = Provider(id: "t", name: "T", icon: "star", items: [], status: .loaded)
+        #expect(provider.planLabel == nil)
+        #expect(provider.insights == nil)
     }
 }
 

@@ -6,6 +6,8 @@ struct UsageItem: Identifiable, Equatable {
     let current: Double
     let limit: Double
     let resetLabel: String?
+    var resetsAt: Date? = nil
+    var valueText: String? = nil     // overrides the "NN%" value display (e.g. "$12 of $50")
 
     var percentage: Double {
         guard limit > 0 else { return 0 }
@@ -14,10 +16,10 @@ struct UsageItem: Identifiable, Equatable {
 
     var gradientColors: (start: Color, end: Color) {
         switch percentage {
-        case 0..<50:
+        case 0..<60:
             return (Color(red: 0.204, green: 0.780, blue: 0.349),  // #34C759
                     Color(red: 0.188, green: 0.820, blue: 0.345))  // #30D158
-        case 50..<80:
+        case 60..<85:
             return (Color(red: 1.0, green: 0.624, blue: 0.039),    // #FF9F0A
                     Color(red: 1.0, green: 0.702, blue: 0.251))    // #FFB340
         default:
@@ -58,6 +60,8 @@ struct Provider: Identifiable, Equatable {
     var isExpanded: Bool = true
     var boostStatus: Claude2xStatus? = nil  // nil = no promo configured
     var costEstimate: Double? = nil          // API cost estimate in dollars
+    var planLabel: String? = nil             // e.g. "Max" from subscriptionType (Claude only)
+    var insights: ClaudeInsights? = nil      // local transcript insights (Claude only)
 
     var maxPercentage: Double {
         items.map(\.percentage).max() ?? 0
@@ -65,8 +69,8 @@ struct Provider: Identifiable, Equatable {
 
     var displayColor: Color {
         switch maxPercentage {
-        case 0..<50: return .green
-        case 50..<80: return .yellow
+        case 0..<60: return .green
+        case 60..<85: return .yellow
         default: return .red
         }
     }

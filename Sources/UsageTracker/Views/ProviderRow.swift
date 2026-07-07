@@ -229,10 +229,11 @@ struct UsageItemRow: View {
             }
             .frame(height: 8)
 
-            Text("\(Int(item.percentage))%")
+            Text(item.valueText ?? "\(Int(item.percentage))%")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
-                .frame(width: 32, alignment: .trailing)
+                .frame(minWidth: 32, alignment: .trailing)
+                .fixedSize(horizontal: true, vertical: false)
 
             Text(item.resetLabel ?? "")
                 .font(.system(size: 9))

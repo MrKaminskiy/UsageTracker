@@ -1,13 +1,5 @@
 import Foundation
 
-struct ModelPricing: Sendable {
-    let patterns: [String]           // case-insensitive substrings to match
-    let inputPerMTok: Double         // $ per million input tokens
-    let outputPerMTok: Double        // $ per million output tokens
-    let cacheWritePerMTok: Double    // $ per million cache write tokens
-    let cacheReadPerMTok: Double     // $ per million cache read tokens
-}
-
 struct ParsedUsage: Sendable {
     let model: String
     let input: Int

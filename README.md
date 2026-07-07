@@ -33,7 +33,7 @@ UsageTracker reads your usage data locally — no accounts, no telemetry.
 
 | Provider | What's shown | How to connect |
 |----------|-------------|----------------|
-| **Claude** | Session %, Weekly %, Sonnet %, Opus %, monthly cost estimate | Auto-detected (uses Claude Code login) |
+| **Claude** | Session %, Weekly %, Sonnet %, Opus %, extra credits, cost estimate, usage insights | Auto-detected (uses Claude Code login) |
 | **Cursor** | Usage % | Auto-detected |
 | **Codex** | Usage % | Auto-detected via `~/.codex/auth.json` |
 | **OpenAI** | Monthly spend (admin key) or daily requests + tokens (project key) | Add key in Settings |

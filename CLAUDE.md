@@ -33,6 +33,8 @@ Located in `Sources/UsageTracker/Providers/`. Each provider fetches usage from a
 - `Views/ProviderRow.swift` - Individual provider display with usage bars
 - `Views/SettingsView.swift` - Settings with provider toggles, API keys, drag-to-reorder
 - `Views/OnboardingView.swift` - First-launch welcome screen
+- `Providers/ClaudeInsightsAnalyzer.swift` - Incremental transcript analysis: monthly cost + 24h usage insights (replaces ClaudeCostEstimator)
+- `Views/ClaudeDetailView.swift` - Claude drill-in page: limit bars, insights, skills/agents breakdown, today stats
 
 ### Config
 User config stored in `~/.usagetracker/`:
@@ -47,12 +49,13 @@ User config stored in `~/.usagetracker/`:
 - Live API key validation
 - "How It Works" help page in Settings
 - Onboarding on first launch
+- Claude detail page: extra-usage credits, 24h insights (context size, subagent share), top skills/agents, today stats
 
 ## Provider Status
 
 | Provider | Auth | What it shows | Status |
 |----------|------|---------------|--------|
-| Claude | OAuth (keychain, auto) | Session %, Weekly %, Sonnet %, Opus %, cost estimate | Tested |
+| Claude | OAuth (keychain, auto) | Session %, Weekly %, Sonnet %, Opus %, extra credits, cost estimate, usage insights | Tested |
 | Cursor | Local DB (auto) | Usage % | Tested |
 | Codex | `~/.codex/auth.json` (auto) | Usage % | Tested |
 | OpenAI | API key (`sk-admin-*` or `sk-proj-*`) | Admin: monthly spend; Project: daily requests + tokens | Experimental |

@@ -7,7 +7,6 @@ struct UsageItem: Identifiable, Equatable {
     let limit: Double
     let resetLabel: String?
     var resetsAt: Date? = nil
-    var valueText: String? = nil     // overrides the "NN%" value display (e.g. "$12 of $50")
 
     var percentage: Double {
         guard limit > 0 else { return 0 }

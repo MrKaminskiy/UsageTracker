@@ -53,14 +53,16 @@ struct ClaudeProviderExtrasTests {
 
     // API reports credits in minor units (cents): verified live 2026-07-08 —
     // raw used=1610 limit=5000 corresponds to €16.10 of €50.00 on claude.ai.
-    // No currency is exposed, so the value renders without a symbol.
-    @Test("Extra credits item converts minor units and formats without currency symbol")
+    // No currency is exposed, so the amounts render without a symbol; they go
+    // in the trailing detail slot (resetLabel) so the row keeps the normal
+    // bar + percentage layout.
+    @Test("Extra credits item converts minor units; amounts in trailing detail slot")
     func extraCreditsMapping() {
         let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 1610, monthly_limit: 5000)
         let item = ClaudeProvider.extraCreditsItem(from: extra)
         #expect(item != nil)
         #expect(item?.label == "Extra credits")
-        #expect(item?.valueText == "16.10 of 50")
+        #expect(item?.resetLabel == "16.10/50")
         #expect(abs((item?.percentage ?? 0) - 32.2) < 0.01)
     }
 
@@ -75,7 +77,7 @@ struct ClaudeProviderExtrasTests {
     @Test("Whole credit amounts drop decimals")
     func extraCreditsWhole() {
         let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 1200, monthly_limit: 5000)
-        #expect(ClaudeProvider.extraCreditsItem(from: extra)?.valueText == "12 of 50")
+        #expect(ClaudeProvider.extraCreditsItem(from: extra)?.resetLabel == "12/50")
     }
 
     @Test("Plan label mapping")

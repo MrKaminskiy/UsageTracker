@@ -133,15 +133,21 @@ struct ClaudeDetailView: View {
                         }
                         .frame(height: 10)
 
-                        Text(item.valueText ?? "\(Int(item.percentage))%")
+                        Text("\(Int(item.percentage))%")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundColor(item.percentage >= 85 ? item.color : .secondary)
-                            .frame(minWidth: 36, alignment: .trailing)
-                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: 36, alignment: .trailing)
                     }
 
                     if let resetsAt = item.resetsAt {
                         Text(ClaudeDetailFormat.absoluteResetLabel(for: resetsAt))
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                            .padding(.leading, 96)
+                    } else if let detail = item.resetLabel {
+                        // Non-time trailing detail (e.g. extra credits "16.10/50")
+                        Text(detail)
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()

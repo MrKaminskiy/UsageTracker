@@ -30,15 +30,13 @@ struct UsageItemTests {
         #expect(green.color != red.color)
     }
 
-    @Test("UsageItem valueText and resetsAt default to nil and are settable")
+    @Test("UsageItem resetsAt defaults to nil and is settable")
     func usageItemNewFields() {
         let plain = UsageItem(label: "T", current: 1, limit: 100, resetLabel: nil)
-        #expect(plain.valueText == nil)
         #expect(plain.resetsAt == nil)
 
         let date = Date()
-        let rich = UsageItem(label: "T", current: 12, limit: 50, resetLabel: nil, resetsAt: date, valueText: "$12 of $50")
-        #expect(rich.valueText == "$12 of $50")
+        let rich = UsageItem(label: "T", current: 12, limit: 50, resetLabel: nil, resetsAt: date)
         #expect(rich.resetsAt == date)
         #expect(abs(rich.percentage - 24.0) < 0.01)
     }

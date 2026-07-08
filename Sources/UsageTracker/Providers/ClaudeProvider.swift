@@ -320,14 +320,15 @@ actor ClaudeProvider {
               let limitMinor = extra.monthly_limit, limitMinor > 0 else { return nil }
         // The API reports credits in minor units (verified live: 1610/5000 =
         // €16.10 of €50.00) and exposes no currency, so no symbol is shown.
+        // Amounts ride in the trailing detail slot (resetLabel) so the row
+        // keeps the standard bar + percentage layout.
         let used = (extra.used_credits ?? 0) / 100
         let limit = limitMinor / 100
         return UsageItem(
             label: "Extra credits",
             current: used,
             limit: limit,
-            resetLabel: nil,
-            valueText: "\(formatCredits(used)) of \(formatCredits(limit))"
+            resetLabel: "\(formatCredits(used))/\(formatCredits(limit))"
         )
     }
 

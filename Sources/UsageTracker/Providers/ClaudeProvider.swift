@@ -179,7 +179,6 @@ actor ClaudeProvider {
         }
 
         if let extraItem = Self.extraCreditsItem(from: usage.extra_usage) {
-            Log.info("Claude extra usage raw values: used=\(usage.extra_usage?.used_credits ?? -1) limit=\(usage.extra_usage?.monthly_limit ?? -1)")
             items.append(extraItem)
         }
 
@@ -318,15 +317,24 @@ actor ClaudeProvider {
 
     static func extraCreditsItem(from extra: UsageResponse.ExtraUsage?) -> UsageItem? {
         guard let extra, extra.is_enabled == true,
-              let limit = extra.monthly_limit, limit > 0 else { return nil }
-        let used = extra.used_credits ?? 0
+              let limitMinor = extra.monthly_limit, limitMinor > 0 else { return nil }
+        // The API reports credits in minor units (verified live: 1610/5000 =
+        // €16.10 of €50.00) and exposes no currency, so no symbol is shown.
+        let used = (extra.used_credits ?? 0) / 100
+        let limit = limitMinor / 100
         return UsageItem(
             label: "Extra credits",
             current: used,
             limit: limit,
             resetLabel: nil,
-            valueText: "\(formatDollars(used)) of \(formatDollars(limit))"
+            valueText: "\(formatCredits(used)) of \(formatCredits(limit))"
         )
+    }
+
+    static func formatCredits(_ value: Double) -> String {
+        value == value.rounded()
+            ? String(format: "%.0f", value)
+            : String(format: "%.2f", value)
     }
 
     static func formatDollars(_ value: Double) -> String {

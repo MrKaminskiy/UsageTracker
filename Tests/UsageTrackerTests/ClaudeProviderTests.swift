@@ -51,14 +51,17 @@ struct ClaudeProviderCredentialsTests {
 @Suite("ClaudeProvider extra credits and plan label")
 struct ClaudeProviderExtrasTests {
 
-    @Test("Extra credits item maps used/limit and formats dollars")
+    // API reports credits in minor units (cents): verified live 2026-07-08 —
+    // raw used=1610 limit=5000 corresponds to €16.10 of €50.00 on claude.ai.
+    // No currency is exposed, so the value renders without a symbol.
+    @Test("Extra credits item converts minor units and formats without currency symbol")
     func extraCreditsMapping() {
-        let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 12, monthly_limit: 50)
+        let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 1610, monthly_limit: 5000)
         let item = ClaudeProvider.extraCreditsItem(from: extra)
         #expect(item != nil)
         #expect(item?.label == "Extra credits")
-        #expect(item?.valueText == "$12 of $50")
-        #expect(abs((item?.percentage ?? 0) - 24.0) < 0.01)
+        #expect(item?.valueText == "16.10 of 50")
+        #expect(abs((item?.percentage ?? 0) - 32.2) < 0.01)
     }
 
     @Test("Extra credits hidden when disabled, missing, or zero limit")
@@ -69,10 +72,10 @@ struct ClaudeProviderExtrasTests {
         #expect(ClaudeProvider.extraCreditsItem(from: .init(is_enabled: true, used_credits: 5, monthly_limit: nil)) == nil)
     }
 
-    @Test("Fractional dollars keep two decimals")
-    func extraCreditsFractional() {
-        let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 12.5, monthly_limit: 50)
-        #expect(ClaudeProvider.extraCreditsItem(from: extra)?.valueText == "$12.50 of $50")
+    @Test("Whole credit amounts drop decimals")
+    func extraCreditsWhole() {
+        let extra = ClaudeProvider.UsageResponse.ExtraUsage(is_enabled: true, used_credits: 1200, monthly_limit: 5000)
+        #expect(ClaudeProvider.extraCreditsItem(from: extra)?.valueText == "12 of 50")
     }
 
     @Test("Plan label mapping")

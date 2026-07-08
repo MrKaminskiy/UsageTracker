@@ -121,10 +121,9 @@ class StatusBarController: NSObject, ObservableObject {
 
         // Create popover for main content
         popover = NSPopover()
+        popover.contentSize = NSSize(width: 340, height: 400)
         popover.behavior = .transient
-        let hosting = NSHostingController(rootView: contentView)
-        hosting.sizingOptions = .preferredContentSize
-        popover.contentViewController = hosting
+        popover.contentViewController = NSHostingController(rootView: contentView)
 
         // Create right-click context menu
         contextMenu = NSMenu()
@@ -195,6 +194,13 @@ class StatusBarController: NSObject, ObservableObject {
                 popover.performClose(nil)
             } else {
                 if let button = statusItem.button {
+                    // Self-sizing is enabled lazily at first show: setting
+                    // .preferredContentSize during applicationDidFinishLaunching
+                    // prevents the NSStatusItem from ever appearing in the menu bar.
+                    if let hosting = popover.contentViewController as? NSHostingController<MenuBarView>,
+                       hosting.sizingOptions != .preferredContentSize {
+                        hosting.sizingOptions = .preferredContentSize
+                    }
                     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                     NSApp.activate(ignoringOtherApps: true)
                     Task {

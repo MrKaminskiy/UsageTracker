@@ -80,6 +80,18 @@ struct MenuBarView: View {
                     .scaleEffect(0.8)
                 Text("Loading...")
                     .font(.system(size: 13, weight: .medium))
+            } else if appState.transientFailureCount > 0 {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 24))
+                    .foregroundColor(.secondary)
+
+                Text("Can't reach the service")
+                    .font(.system(size: 13, weight: .medium))
+
+                Text("Rate-limited or offline — retrying automatically")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
             } else {
                 Image(systemName: "exclamationmark.circle")
                     .font(.system(size: 24))

@@ -99,3 +99,47 @@ struct AppStateRefreshIntervalTests {
         #expect(appState.config.refreshIntervalMinutes == 15)
     }
 }
+
+@Suite("AppState transient-failure detection")
+@MainActor
+struct AppStateTransientFailureTests {
+
+    private func withData(_ id: String) -> Provider {
+        Provider(id: id, name: id, icon: "x",
+                 items: [UsageItem(label: "Session", current: 40, limit: 100, resetLabel: nil)],
+                 status: .loaded)
+    }
+    private func notConnected(_ id: String) -> Provider {
+        Provider(id: id, name: id, icon: "x", items: [],
+                 status: .notConnected(url: URL(string: "https://example.com")!))
+    }
+
+    @Test("Enabled provider that threw with no cached data counts as transient")
+    func threwNoData() {
+        let n = AppState.transientFailures(
+            results: [("claude", nil)], finalProviders: [], enabled: ["claude": true])
+        #expect(n == 1)
+    }
+
+    @Test("notConnected (non-throwing) is signed-out, not transient")
+    func notConnectedIsNotTransient() {
+        let p = notConnected("claude")
+        let n = AppState.transientFailures(
+            results: [("claude", p)], finalProviders: [p], enabled: ["claude": true])
+        #expect(n == 0)
+    }
+
+    @Test("Disabled provider that threw is not counted")
+    func disabledNotCounted() {
+        let n = AppState.transientFailures(
+            results: [("claude", nil)], finalProviders: [], enabled: ["claude": false])
+        #expect(n == 0)
+    }
+
+    @Test("Threw but has preserved cached data is not counted")
+    func cachedDataNotCounted() {
+        let n = AppState.transientFailures(
+            results: [("claude", nil)], finalProviders: [withData("claude")], enabled: ["claude": true])
+        #expect(n == 0)
+    }
+}

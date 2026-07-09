@@ -68,6 +68,9 @@ class AppState: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var config: AppConfig = AppConfig()
     @Published var lastUpdated: Date?
+    /// Enabled providers that failed transiently this refresh (rate-limited/offline) with no
+    /// data to fall back on. Drives an honest empty state instead of a misleading "sign in".
+    @Published var transientFailureCount: Int = 0
 
     let updateChecker = UpdateChecker()
 
@@ -144,13 +147,13 @@ class AppState: ObservableObject {
 
         var newProviders: [Provider] = []
 
-        let results: [(String, Provider?)] = [
-            ("Claude", claude), ("Cursor", cursor), ("Codex", codex),
-            ("ElevenLabs", elevenLabs), ("Stability", stability),
-            ("Runway", runway), ("OpenAI", openAI), ("OpenRouter", openRouter)
+        let results: [(name: String, id: String, provider: Provider?)] = [
+            ("Claude", "claude", claude), ("Cursor", "cursor", cursor), ("Codex", "codex", codex),
+            ("ElevenLabs", "elevenlabs", elevenLabs), ("Stability", "stability", stability),
+            ("Runway", "runway", runway), ("OpenAI", "openai", openAI), ("OpenRouter", "openrouter", openRouter)
         ]
 
-        for (name, provider) in results {
+        for (name, _, provider) in results {
             if let provider = provider {
                 newProviders.append(provider)
                 switch provider.status {
@@ -176,6 +179,15 @@ class AppState: ObservableObject {
                 newProviders.append(existingProvider)
             }
         }
+
+        // Distinguish "rate-limited / unreachable" from "not signed in": a provider that threw
+        // (nil result) with no data to fall back on is a transient failure, whereas a
+        // .notConnected status means genuinely signed out.
+        transientFailureCount = Self.transientFailures(
+            results: results.map { ($0.id, $0.provider) },
+            finalProviders: newProviders,
+            enabled: config.enabledProviders
+        )
 
         // Strip cost estimates if disabled in settings
         if !config.showCostEstimate {
@@ -262,6 +274,20 @@ class AppState: ObservableObject {
     func completeOnboarding() {
         config.hasCompletedOnboarding = true
         saveConfig()
+    }
+
+    /// Count of enabled providers that failed transiently this refresh (threw — e.g. rate-limit
+    /// or network error) and have no cached data to fall back on. A `.notConnected` status is a
+    /// non-throwing result and is NOT counted, so genuine "signed out" stays distinct.
+    static func transientFailures(results: [(id: String, provider: Provider?)],
+                                  finalProviders: [Provider],
+                                  enabled: [String: Bool]) -> Int {
+        results.reduce(0) { acc, r in
+            let threw = r.provider == nil
+            let isEnabled = enabled[r.id] == true
+            let hasData = finalProviders.contains { $0.id == r.id && !$0.items.isEmpty }
+            return acc + (threw && isEnabled && !hasData ? 1 : 0)
+        }
     }
 
     var visibleProviders: [Provider] {

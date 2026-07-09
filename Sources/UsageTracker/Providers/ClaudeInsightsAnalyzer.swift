@@ -128,6 +128,7 @@ actor ClaudeInsightsAnalyzer {
             for u in todayUsage {
                 today.cost += costForTokens(model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead)
                 today.totalTokens += u.totalTokens
+                today.cacheReadTokens += u.cacheRead
             }
             today.sessionCount = Set(todayUsage.compactMap { $0.isSidechain ? nil : $0.sessionId }).count
             today.linesAdded = todayPatches.reduce(0) { $0 + $1.linesAdded }

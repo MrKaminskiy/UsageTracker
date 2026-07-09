@@ -255,6 +255,13 @@ struct ClaudeDetailView: View {
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .monospacedDigit()
+            if today.cacheReadTokens > 0 {
+                Text("\(ClaudeDetailFormat.tokenCount(today.cacheReadTokens)) cache reads · \(ClaudeDetailFormat.tokenCount(today.newTokens)) new")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                    .help("Cache reads are re-sent context (cheap). \"New\" is input + output + cache writes — the tokens that reflect actual work.")
+            }
         }
     }
 

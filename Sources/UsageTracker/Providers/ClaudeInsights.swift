@@ -9,8 +9,12 @@ struct TodayStats: Equatable, Sendable {
     var cost: Double = 0
     var sessionCount: Int = 0
     var totalTokens: Int = 0
+    var cacheReadTokens: Int = 0      // re-sent context; cheap, dominates totalTokens
     var linesAdded: Int = 0
     var linesRemoved: Int = 0
+
+    /// input + output + cacheWrite — the tokens that aren't just re-read context
+    var newTokens: Int { max(0, totalTokens - cacheReadTokens) }
 }
 
 struct ClaudeInsights: Equatable, Sendable {

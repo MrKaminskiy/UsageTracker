@@ -170,6 +170,23 @@ struct ClaudeInsightsAggregationTests {
         #expect(today?.linesRemoved == 6)
     }
 
+    @Test("Today stats split cache reads from new tokens")
+    func todayCacheSplit() {
+        // 1 event today: 5M cache read + 100k output → totalTokens 5.1M, new 100k
+        let events: [TranscriptEvent] = [
+            .usage(UsageEvent(
+                timestamp: now.addingTimeInterval(-3600),
+                model: "claude-opus-4-6",
+                input: 0, output: 100_000, cacheWrite: 0, cacheRead: 5_000_000,
+                isSidechain: false, sessionId: "A", skill: nil, agent: nil
+            ))
+        ]
+        let today = ClaudeInsightsAnalyzer.aggregate(recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar).today
+        #expect(today?.totalTokens == 5_100_000)
+        #expect(today?.cacheReadTokens == 5_000_000)
+        #expect(today?.newTokens == 100_000)
+    }
+
     @Test("Nothing today leaves today nil")
     func noToday() {
         let events = [usage(hoursAgo: 13, tokens: 100)]  // yesterday relative to 12:00 UTC

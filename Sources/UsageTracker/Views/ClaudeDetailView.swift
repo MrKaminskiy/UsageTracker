@@ -165,6 +165,15 @@ struct ClaudeDetailView: View {
                 .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
 
+            if let avg = insights.avgContextTokens {
+                let sub = Int((insights.subagentShare ?? 0).rounded())
+                Text("~\(ClaudeDetailFormat.tokenCount(avg)) avg context/turn · \(sub)% subagents")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+                    .help("Average context re-sent each turn (the main token driver) and the share of tokens from subagent-heavy sessions. 0% subagents = plain single-agent sessions.")
+            }
+
             let contextWarning = (insights.contextShareOver150k ?? 0) >= ClaudeInsights.contextWarningThreshold
             let subagentWarning = (insights.subagentShare ?? 0) >= ClaudeInsights.subagentWarningThreshold
 
@@ -173,6 +182,9 @@ struct ClaudeDetailView: View {
                     stat: "\(Int(share.rounded()))% of usage at >150k context",
                     hint: "/compact mid-task, /clear between tasks"
                 )
+                if !insights.heaviestSessions.isEmpty {
+                    heaviestChats(insights.heaviestSessions)
+                }
             }
             if subagentWarning, let share = insights.subagentShare {
                 insightRow(
@@ -191,6 +203,43 @@ struct ClaudeDetailView: View {
                 }
             }
         }
+    }
+
+    /// Which specific chats drove the >150k-context usage, ranked by heavy tokens.
+    private func heaviestChats(_ sessions: [HeavySession]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Heaviest chats")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+            ForEach(Array(sessions.enumerated()), id: \.offset) { _, s in
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(s.title)
+                            .font(.system(size: 10, weight: .medium))
+                            .lineLimit(1)
+                        if let p = s.project, p != s.title {
+                            Text(p)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    Text("peaked \(ClaudeDetailFormat.tokenCount(s.peakContextTokens))")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                    Text("\(Int(s.share.rounded()))%")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.orange)
+                        .monospacedDigit()
+                        .frame(width: 32, alignment: .trailing)
+                }
+            }
+        }
+        .padding(.leading, 16)
+        .help("Chats that spent the most tokens while their context was above 150k — these add up to the % above. /compact a long chat, or /clear to start fresh.")
     }
 
     private func insightRow(stat: String, hint: String) -> some View {

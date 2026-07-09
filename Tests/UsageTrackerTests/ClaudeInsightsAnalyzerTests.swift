@@ -98,6 +98,38 @@ struct ClaudeInsightsAggregationTests {
         let insights = ClaudeInsightsAnalyzer.aggregate(recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar)
         // 200k of 300k tokens in-window came from >150k-context requests
         #expect(abs((insights.contextShareOver150k ?? 0) - 66.67) < 0.1)
+        // avg context per in-window turn: (160k + 100k) / 2 = 130k
+        #expect(insights.avgContextTokens == 130_000)
+    }
+
+    @Test("Heaviest chats decompose the >150k share by session, ranked with metadata")
+    func heaviestChats() {
+        let events = [
+            usage(hoursAgo: 1, tokens: 200_000, contextTokens: 160_000, session: "A"), // heavy
+            usage(hoursAgo: 2, tokens: 100_000, contextTokens: 180_000, session: "B"), // heavy
+            usage(hoursAgo: 3, tokens: 100_000, contextTokens: 100_000, session: "C"), // under 150k
+        ]
+        let meta: [String: SessionMeta] = [
+            "A": SessionMeta(title: "icon work", project: "UsageTracker"),
+            "B": SessionMeta(title: nil, project: "my-app"),  // no aiTitle → falls back to project
+        ]
+        let insights = ClaudeInsightsAnalyzer.aggregate(
+            recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar, sessionMeta: meta)
+        let heavy = insights.heaviestSessions
+        #expect(heavy.count == 2)                      // session C (under 150k) excluded
+        #expect(heavy[0].title == "icon work")         // ranked by heavy tokens: A (200k) first
+        #expect(heavy[0].project == "UsageTracker")
+        #expect(heavy[0].peakContextTokens == 160_000)
+        #expect(abs(heavy[0].share - 50.0) < 0.01)     // 200k / 400k total
+        #expect(heavy[1].title == "my-app")            // title nil → project fallback
+        #expect(abs(heavy[1].share - 25.0) < 0.01)     // 100k / 400k total
+    }
+
+    @Test("Avg context nil when no 24h data")
+    func avgContextEmpty() {
+        let events = [usage(hoursAgo: 30, tokens: 1000, contextTokens: 500)]
+        let insights = ClaudeInsightsAnalyzer.aggregate(recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar)
+        #expect(insights.avgContextTokens == nil)
     }
 
     @Test("Boundary: exactly 150k context does not count as over")

@@ -73,7 +73,8 @@ actor ClaudeInsightsAnalyzer {
         return nil
     }
 
-    static func aggregate(recentEvents: [TranscriptEvent], monthlyCost: Double, now: Date, calendar: Calendar = .current) -> ClaudeInsights {
+    static func aggregate(recentEvents: [TranscriptEvent], monthlyCost: Double, now: Date, calendar: Calendar = .current,
+                          sessionMeta: [String: SessionMeta] = [:]) -> ClaudeInsights {
         var insights = ClaudeInsights(monthlyCost: monthlyCost)
 
         let windowStart = now.addingTimeInterval(-24 * 3600)
@@ -97,6 +98,31 @@ actor ClaudeInsightsAnalyzer {
 
             let overTokens = usage24.filter { $0.contextTokens > 150_000 }.reduce(0) { $0 + $1.totalTokens }
             insights.contextShareOver150k = Double(overTokens) / total * 100
+
+            // Decompose that >150k share by chat: which sessions actually grew large.
+            // heavy = tokens a session spent while its context was >150k; peak = its largest context.
+            var sessionHeavy: [String: Int] = [:]
+            var sessionPeak: [String: Int] = [:]
+            for u in usage24 {
+                guard let sid = u.sessionId else { continue }
+                sessionPeak[sid] = max(sessionPeak[sid] ?? 0, u.contextTokens)
+                if u.contextTokens > 150_000 { sessionHeavy[sid, default: 0] += u.totalTokens }
+            }
+            insights.heaviestSessions = sessionHeavy
+                .filter { $0.value > 0 }
+                .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+                .prefix(5)
+                .map { sid, heavy in
+                    let meta = sessionMeta[sid]
+                    let title = meta?.title ?? meta?.project ?? "Untitled chat"
+                    return HeavySession(title: title,
+                                        project: meta?.project,
+                                        peakContextTokens: sessionPeak[sid] ?? 0,
+                                        share: Double(heavy) / total * 100)
+                }
+
+            let contextSum = usage24.reduce(0) { $0 + $1.contextTokens }
+            insights.avgContextTokens = contextSum / usage24.count
 
             var sessionTokens: [String: Int] = [:]
             var sessionSidechainTokens: [String: Int] = [:]
@@ -183,6 +209,9 @@ actor ClaudeInsightsAnalyzer {
         let monthKey: String            // "yyyy-MM" the summary was computed for
         let monthCost: Double           // cost of usage events within that month
         let recentEvents: [TranscriptEvent]  // events within 25h of parse time
+        let sessionId: String?          // this transcript's session (the file name)
+        let title: String?              // aiTitle from the transcript, if any
+        let project: String?            // short project name (cwd leaf)
     }
 
     private var fileCache: [String: FileSummary] = [:]
@@ -223,6 +252,7 @@ actor ClaudeInsightsAnalyzer {
 
         var totalCost: Double = 0
         var recentEvents: [TranscriptEvent] = []
+        var sessionMeta: [String: SessionMeta] = [:]
 
         for (fileURL, modDate, size) in jsonlFiles {
             let path = fileURL.path
@@ -240,21 +270,35 @@ actor ClaudeInsightsAnalyzer {
             // every month-old file on each refresh.
             if modDate >= recentCutoff {
                 recentEvents.append(contentsOf: summary.recentEvents)
+                if let sid = summary.sessionId {
+                    sessionMeta[sid] = SessionMeta(title: summary.title, project: summary.project)
+                }
             }
         }
 
-        return Self.aggregate(recentEvents: recentEvents, monthlyCost: totalCost, now: now, calendar: calendar)
+        return Self.aggregate(recentEvents: recentEvents, monthlyCost: totalCost, now: now,
+                              calendar: calendar, sessionMeta: sessionMeta)
     }
 
     private static func parseFile(at url: URL, modDate: Date, size: Int, monthKey: String,
                                   monthStart: Date, now: Date, recentCutoff: Date) -> FileSummary {
+        // The file name is the session id; keep it even if the file can't be read.
+        let sessionId = url.deletingPathExtension().lastPathComponent
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return FileSummary(modDate: modDate, size: size, monthKey: monthKey, monthCost: 0, recentEvents: [])
+            return FileSummary(modDate: modDate, size: size, monthKey: monthKey, monthCost: 0,
+                               recentEvents: [], sessionId: sessionId, title: nil, project: nil)
         }
 
         var monthCost: Double = 0
         var recentEvents: [TranscriptEvent] = []
+        var title: String? = nil     // human-readable chat title (aiTitle)
+        var project: String? = nil   // short project name from cwd
         content.enumerateLines { line, _ in
+            // Cheap string pre-check before JSON-parsing for the two metadata fields.
+            if title == nil, line.contains("\"aiTitle\""), let t = stringField("aiTitle", in: line) { title = t }
+            if project == nil, line.contains("\"cwd\""), let c = stringField("cwd", in: line) {
+                project = URL(fileURLWithPath: c).lastPathComponent
+            }
             guard let event = parseEvent(line) else { return }
             switch event {
             case .usage(let u):
@@ -268,7 +312,15 @@ actor ClaudeInsightsAnalyzer {
                 if p.timestamp >= recentCutoff { recentEvents.append(event) }
             }
         }
-        return FileSummary(modDate: modDate, size: size, monthKey: monthKey, monthCost: monthCost, recentEvents: recentEvents)
+        return FileSummary(modDate: modDate, size: size, monthKey: monthKey, monthCost: monthCost,
+                           recentEvents: recentEvents, sessionId: sessionId, title: title, project: project)
+    }
+
+    /// Parse one JSONL line and return a top-level string field, or nil.
+    private static func stringField(_ key: String, in line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return obj[key] as? String
     }
 
     private static func monthKey(for monthStart: Date) -> String {

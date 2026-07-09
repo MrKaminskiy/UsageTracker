@@ -17,12 +17,30 @@ struct TodayStats: Equatable, Sendable {
     var newTokens: Int { max(0, totalTokens - cacheReadTokens) }
 }
 
+/// One chat (session) that spent tokens while its context was above 150k — a
+/// per-session decomposition of `contextShareOver150k`, so the user can see
+/// *which* chat grew instead of just an aggregate percentage.
+struct HeavySession: Equatable, Sendable {
+    let title: String            // aiTitle from the transcript, or project-name fallback
+    let project: String?         // short project (cwd leaf) for context; nil if unknown
+    let peakContextTokens: Int   // largest context this chat reached in the window
+    let share: Double            // % of last-24h tokens this chat spent while >150k context
+}
+
+/// Title/project for a session, captured while parsing its transcript file.
+struct SessionMeta: Equatable, Sendable {
+    let title: String?
+    let project: String?
+}
+
 struct ClaudeInsights: Equatable, Sendable {
     var monthlyCost: Double? = nil
     var contextShareOver150k: Double? = nil   // nil when no last-24h data
     var subagentShare: Double? = nil          // nil when no last-24h data
+    var avgContextTokens: Int? = nil          // mean context (input+cache) per turn, last 24h
     var skills: [UsageShare] = []
     var subagents: [UsageShare] = []
+    var heaviestSessions: [HeavySession] = [] // chats driving the >150k share, ranked
     var today: TodayStats? = nil              // nil when nothing happened today
 
     static let contextWarningThreshold: Double = 40

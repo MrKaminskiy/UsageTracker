@@ -1,4 +1,4 @@
-.PHONY: run stop restart logs status build test clean release
+.PHONY: run stop restart logs status build test clean release install
 
 APP_NAME := UsageTracker
 PID_FILE := .usagetracker.pid
@@ -50,3 +50,9 @@ clean:
 
 release:
 	./scripts/release.sh
+
+# Build a signed .app and install it to /Applications for local use on this Mac
+# (no notarization needed for a locally-built app). Use `release` for a DMG.
+install:
+	swift build -c release
+	./scripts/install_local.sh

@@ -94,6 +94,13 @@ struct AppStateRefreshIntervalTests {
     @MainActor
     @Test("updateRefreshInterval writes to config")
     func writesToConfig() {
+        // AppState persists to the real ~/.usagetracker/config.json; snapshot and restore
+        // it so running the test suite doesn't mutate the developer's actual settings.
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".usagetracker/config.json")
+        let backup = try? Data(contentsOf: url)
+        defer { if let backup { try? backup.write(to: url) } }
+
         let appState = AppState()
         appState.updateRefreshInterval(15)
         #expect(appState.config.refreshIntervalMinutes == 15)

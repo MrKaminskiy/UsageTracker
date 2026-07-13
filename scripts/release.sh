@@ -68,4 +68,14 @@ rm -rf "$DMG_TMP"
 # Sign the DMG too
 codesign --force --sign "$IDENTITY" "build/$DMG_NAME"
 
+echo "==> Notarizing DMG..."
+xcrun notarytool submit "build/$DMG_NAME" \
+    --apple-id "$APPLE_ID" \
+    --team-id "$TEAM_ID" \
+    --password "$APP_PASSWORD" \
+    --wait
+
+echo "==> Stapling DMG..."
+xcrun stapler staple "build/$DMG_NAME"
+
 echo "==> Done! Output: build/$DMG_NAME"

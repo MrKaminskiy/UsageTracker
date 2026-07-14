@@ -84,13 +84,19 @@ User config stored in `~/.usagetracker/`:
 
 ## Releasing
 
-Required env vars (set in your shell before running `make release`):
+Notarization credentials are stored once in the Keychain via `notarytool`, not passed as env vars:
+
+```bash
+xcrun notarytool store-credentials "usagetracker-release" \
+  --apple-id "you@example.com" \
+  --team-id "YOURTEAMID"
+# prompts for an app-specific password from appleid.apple.com
+```
+
+`scripts/release.sh` uses that profile by default (override with `NOTARY_PROFILE`). Only the signing identity is still a required env var:
 
 ```bash
 export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-export TEAM_ID="YOURTEAMID"
-export APPLE_ID="you@example.com"
-export APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # App-specific password from appleid.apple.com
 ```
 
 Release steps:

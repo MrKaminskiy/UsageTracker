@@ -5,9 +5,7 @@ APP_NAME="UsageTracker"
 BUNDLE_DIR="build/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}.dmg"
 IDENTITY="${CODESIGN_IDENTITY:?Set CODESIGN_IDENTITY to your Developer ID Application certificate name}"
-TEAM_ID="${TEAM_ID:?Set TEAM_ID to your Apple Developer Team ID}"
-APPLE_ID="${APPLE_ID:?Set APPLE_ID to your Apple ID email}"
-APP_PASSWORD="${APP_PASSWORD:?Set APP_PASSWORD to an app-specific password}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-usagetracker-release}"
 
 echo "==> Building release (universal binary)..."
 swift build -c release --triple arm64-apple-macosx
@@ -39,9 +37,7 @@ echo "==> Notarizing..."
 ZIP_PATH="build/${APP_NAME}.zip"
 ditto -c -k --keepParent "$BUNDLE_DIR" "$ZIP_PATH"
 xcrun notarytool submit "$ZIP_PATH" \
-    --apple-id "$APPLE_ID" \
-    --team-id "$TEAM_ID" \
-    --password "$APP_PASSWORD" \
+    --keychain-profile "$NOTARY_PROFILE" \
     --wait
 rm -f "$ZIP_PATH"
 
@@ -70,9 +66,7 @@ codesign --force --sign "$IDENTITY" "build/$DMG_NAME"
 
 echo "==> Notarizing DMG..."
 xcrun notarytool submit "build/$DMG_NAME" \
-    --apple-id "$APPLE_ID" \
-    --team-id "$TEAM_ID" \
-    --password "$APP_PASSWORD" \
+    --keychain-profile "$NOTARY_PROFILE" \
     --wait
 
 echo "==> Stapling DMG..."

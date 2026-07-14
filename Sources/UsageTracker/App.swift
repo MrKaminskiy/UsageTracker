@@ -88,7 +88,7 @@ class AppState: ObservableObject {
         // If there's a pinned item, use its percentage
         if let pinned = config.pinnedItem,
            let provider = visibleProviders.first(where: { $0.id == pinned.providerId }),
-           let item = provider.items.first(where: { $0.label == pinned.itemLabel }) {
+           let item = provider.items.first(where: { $0.stablePinKey == pinned.itemLabel }) {
             return item.percentage
         }
         // Otherwise use the max across all visible providers

@@ -93,8 +93,8 @@ struct DisplayTab: View {
                         Picker("", selection: pinnedSelection) {
                             Text("Auto (highest %)").tag(PinnedSelection.auto)
                             ForEach(menuBarOptions(), id: \.self) { option in
-                                Text("\(option.providerName) · \(option.itemLabel)")
-                                    .tag(PinnedSelection.pinned(providerId: option.providerId, itemLabel: option.itemLabel))
+                                Text("\(option.providerName) · \(option.displayLabel)")
+                                    .tag(PinnedSelection.pinned(providerId: option.providerId, itemLabel: option.pinKey))
                             }
                         }
                         .labelsHidden()
@@ -113,13 +113,14 @@ struct DisplayTab: View {
     private struct MenuBarOption: Hashable {
         let providerId: String
         let providerName: String
-        let itemLabel: String
+        let displayLabel: String
+        let pinKey: String
     }
 
     private func menuBarOptions() -> [MenuBarOption] {
         appState.visibleProviders.flatMap { provider in
             provider.items.map { item in
-                MenuBarOption(providerId: provider.id, providerName: provider.name, itemLabel: item.label)
+                MenuBarOption(providerId: provider.id, providerName: provider.name, displayLabel: item.label, pinKey: item.stablePinKey)
             }
         }
     }

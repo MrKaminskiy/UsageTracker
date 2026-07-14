@@ -30,19 +30,19 @@ struct ProviderRow: View {
             } else if provider.isExpanded && !provider.items.isEmpty {
                 // Find the first item with max percentage (used when nothing is pinned)
                 let maxItemId = provider.items.max(by: { $0.percentage < $1.percentage })?.id
-                let hasPinnedItem = provider.items.contains { isPinned($0.label) }
+                let hasPinnedItem = provider.items.contains { isPinned($0.stablePinKey) }
 
                 // Inset content area
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(provider.items) { item in
-                        let itemIsPinned = isPinned(item.label)
+                        let itemIsPinned = isPinned(item.stablePinKey)
                         // Show green dot if: pinned, OR (no pin anywhere AND this is max in displayed provider)
                         let showDot = itemIsPinned || (!hasPinnedItem && isDisplayedInBar && item.id == maxItemId)
                         UsageItemRow(
                             item: item,
                             isDisplayedInBar: showDot,
                             isPinned: itemIsPinned,
-                            onTap: { onTogglePin?(item.label) }
+                            onTap: { onTogglePin?(item.stablePinKey) }
                         )
                     }
 
@@ -153,7 +153,7 @@ struct ProviderRow: View {
                     Image(systemName: "chevron.right.circle")
                 }
                 .buttonStyle(.icon)
-                .help("Claude details & insights")
+                .help("Usage details")
                 .opacity(isCardHovered ? 1 : 0)
             }
 

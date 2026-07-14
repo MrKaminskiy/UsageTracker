@@ -7,6 +7,10 @@ struct UsageItem: Identifiable, Equatable {
     let limit: Double
     let resetLabel: String?
     var resetsAt: Date? = nil
+    /// Stable identity for pin persistence, independent of the display label (which can vary, e.g. Codex's window duration labels). Falls back to `label` when a provider doesn't set one.
+    var pinKey: String? = nil
+
+    var stablePinKey: String { pinKey ?? label }
 
     var percentage: Double {
         guard limit > 0 else { return 0 }
@@ -61,6 +65,7 @@ struct Provider: Identifiable, Equatable {
     var costEstimate: Double? = nil          // API cost estimate in dollars
     var planLabel: String? = nil             // e.g. "Max" from subscriptionType (Claude only)
     var insights: ClaudeInsights? = nil      // local transcript insights (Claude only)
+    var codexInsights: CodexInsights? = nil  // local CLI activity and account details (Codex only)
 
     var maxPercentage: Double {
         items.map(\.percentage).max() ?? 0

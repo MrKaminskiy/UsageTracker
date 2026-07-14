@@ -32,6 +32,7 @@ struct MenuBarView: View {
     private enum Screen: Equatable {
         case list
         case claudeDetail
+        case codexDetail
     }
 
     @State private var screen: Screen = .list
@@ -44,6 +45,11 @@ struct MenuBarView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             case .claudeDetail:
                 ClaudeDetailView(appState: appState) {
+                    withAnimation(.easeInOut(duration: 0.2)) { screen = .list }
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            case .codexDetail:
+                CodexDetailView(appState: appState) {
                     withAnimation(.easeInOut(duration: 0.2)) { screen = .list }
                 }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -134,12 +140,21 @@ struct MenuBarView: View {
                         onTogglePin: { itemLabel in
                             appState.togglePin(providerId: provider.id, itemLabel: itemLabel)
                         },
-                        onOpenDetail: provider.id == "claude" ? {
-                            withAnimation(.easeInOut(duration: 0.2)) { screen = .claudeDetail }
-                        } : nil
+                        onOpenDetail: detailAction(for: provider.id)
                     )
                 }
             }
+        }
+    }
+
+    private func detailAction(for providerID: String) -> (() -> Void)? {
+        switch providerID {
+        case "claude":
+            return { withAnimation(.easeInOut(duration: 0.2)) { screen = .claudeDetail } }
+        case "codex":
+            return { withAnimation(.easeInOut(duration: 0.2)) { screen = .codexDetail } }
+        default:
+            return nil
         }
     }
 

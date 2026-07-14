@@ -40,6 +40,15 @@ struct UsageItemTests {
         #expect(rich.resetsAt == date)
         #expect(abs(rich.percentage - 24.0) < 0.01)
     }
+
+    @Test("stablePinKey falls back to label when pinKey is unset, else uses pinKey")
+    func usageItemStablePinKey() {
+        let noKey = UsageItem(label: "5h", current: 1, limit: 100, resetLabel: nil)
+        #expect(noKey.stablePinKey == "5h")
+
+        let withKey = UsageItem(label: "5h", current: 1, limit: 100, resetLabel: nil, pinKey: "Session")
+        #expect(withKey.stablePinKey == "Session")
+    }
 }
 
 @Suite("Provider Tests")

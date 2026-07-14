@@ -21,11 +21,13 @@ actor CodexProvider {
             var accessToken: String?
             var refreshToken: String?
             var accountId: String?
+            var idToken: String?
 
             enum CodingKeys: String, CodingKey {
                 case accessToken = "access_token"
                 case refreshToken = "refresh_token"
                 case accountId = "account_id"
+                case idToken = "id_token"
             }
         }
     }
@@ -39,6 +41,7 @@ actor CodexProvider {
             case rateLimit = "rate_limit"
             case codeReviewRateLimit = "code_review_rate_limit"
             case credits
+            case planType = "plan_type"
         }
 
         struct RateLimit: Codable {
@@ -61,11 +64,13 @@ actor CodexProvider {
 
         struct Window: Codable {
             var usedPercent: Double?
+            var limitWindowSeconds: Int?
             var resetAfterSeconds: Int?
             var resetAt: Double?
 
             enum CodingKeys: String, CodingKey {
                 case usedPercent = "used_percent"
+                case limitWindowSeconds = "limit_window_seconds"
                 case resetAfterSeconds = "reset_after_seconds"
                 case resetAt = "reset_at"
             }
@@ -74,6 +79,8 @@ actor CodexProvider {
         struct Credits: Codable {
             var balance: String?
         }
+
+        var planType: String?
     }
 
     func fetchUsage() async throws -> Provider {
@@ -137,46 +144,77 @@ actor CodexProvider {
 
         var items: [UsageItem] = []
 
-        // Session usage (5 hour window)
+        // Primary usage (normally the five-hour window).
         if let percent = usage.rateLimit?.primaryWindow?.usedPercent {
-            let resetLabel = formatResetTime(usage.rateLimit?.primaryWindow?.resetAfterSeconds)
+            let window = usage.rateLimit?.primaryWindow
+            let resetLabel = formatResetTime(window?.resetAfterSeconds)
             items.append(UsageItem(
-                label: "Session",
+                label: Self.windowLabel(window, fallback: "Session"),
                 current: percent,
                 limit: 100,
-                resetLabel: resetLabel
+                resetLabel: resetLabel,
+                resetsAt: resetDate(for: window),
+                pinKey: "Session"
             ))
         }
 
-        // Weekly usage
+        // Secondary usage (normally the weekly window).
         if let percent = usage.rateLimit?.secondaryWindow?.usedPercent {
-            let resetLabel = formatResetTime(usage.rateLimit?.secondaryWindow?.resetAfterSeconds)
+            let window = usage.rateLimit?.secondaryWindow
+            let resetLabel = formatResetTime(window?.resetAfterSeconds)
             items.append(UsageItem(
-                label: "Weekly",
+                label: Self.windowLabel(window, fallback: "Weekly"),
                 current: percent,
                 limit: 100,
-                resetLabel: resetLabel
+                resetLabel: resetLabel,
+                resetsAt: resetDate(for: window),
+                pinKey: "Weekly"
             ))
         }
 
         // Code reviews
         if let percent = usage.codeReviewRateLimit?.primaryWindow?.usedPercent {
-            let resetLabel = formatResetTime(usage.codeReviewRateLimit?.primaryWindow?.resetAfterSeconds)
+            let window = usage.codeReviewRateLimit?.primaryWindow
+            let resetLabel = formatResetTime(window?.resetAfterSeconds)
             items.append(UsageItem(
-                label: "Reviews",
+                label: "Code review",
                 current: percent,
                 limit: 100,
-                resetLabel: resetLabel
+                resetLabel: resetLabel,
+                resetsAt: resetDate(for: window),
+                pinKey: "Reviews"
             ))
         }
+
+        let localInsights = await CodexInsightsAnalyzer().analyze()
+        let accountInsights = CodexInsights(
+            today: localInsights?.today,
+            recentThreads: localInsights?.recentThreads ?? [],
+            models: localInsights?.models ?? [],
+            creditBalance: usage.credits?.balance
+        )
 
         return Provider(
             id: "codex",
             name: "Codex",
             icon: "terminal.fill",
             items: items,
-            status: items.isEmpty ? .error("No usage data") : .loaded
+            status: items.isEmpty ? .error("No usage data") : .loaded,
+            planLabel: Self.planLabel(from: usage.planType) ?? Self.planLabel(fromIDToken: auth.tokens?.idToken),
+            codexInsights: accountInsights
         )
+    }
+
+    private func resetDate(for window: UsageResponse.Window?) -> Date? {
+        if let seconds = window?.resetAfterSeconds, seconds > 0 {
+            return Date().addingTimeInterval(TimeInterval(seconds))
+        }
+        guard let timestamp = window?.resetAt, timestamp > 0 else { return nil }
+        let date = Date(timeIntervalSince1970: timestamp)
+        // Rate-limit windows reset within days/weeks; a value this far out means the
+        // timestamp unit assumption (seconds) was wrong, so surface nothing rather than garbage.
+        guard date.timeIntervalSinceNow < 400 * 24 * 60 * 60 else { return nil }
+        return date
     }
 
     private func formatResetTime(_ seconds: Int?) -> String? {
@@ -193,5 +231,42 @@ actor CodexProvider {
         } else {
             return "\(minutes)m"
         }
+    }
+
+    static func windowLabel(_ window: UsageResponse.Window?, fallback: String) -> String {
+        guard let seconds = window?.limitWindowSeconds, seconds > 0 else { return fallback }
+        switch seconds {
+        case 0..<(60 * 60):
+            let minutes = max(1, seconds / 60)
+            return "\(minutes)m"
+        case (60 * 60)..<(24 * 60 * 60):
+            let hours = max(1, seconds / 3600)
+            return "\(hours)h"
+        default:
+            return fallback
+        }
+    }
+
+    static func planLabel(from planType: String?) -> String? {
+        guard let planType, !planType.isEmpty else { return nil }
+        return planType.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    static func planLabel(fromIDToken idToken: String?) -> String? {
+        guard let idToken else { return nil }
+        let parts = idToken.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var payload = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let data = Data(base64Encoded: payload),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+
+        let authClaims = json["https://api.openai.com/auth"] as? [String: Any]
+        let plan = json["chatgpt_plan_type"] as? String
+            ?? authClaims?["chatgpt_plan_type"] as? String
+            ?? authClaims?["plan_type"] as? String
+        return planLabel(from: plan)
     }
 }

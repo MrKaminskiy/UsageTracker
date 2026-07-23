@@ -7,8 +7,13 @@ actor ClaudeProvider {
     private let refreshURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     private let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     private let scopes = "user:profile user:inference user:sessions:claude_code user:mcp_servers"
-    private let refreshBufferMs: Double = 5 * 60 * 1000 // 5 minutes
+    static let refreshBufferMs: Double = 5 * 60 * 1000 // 5 minutes
     private let insightsAnalyzer = ClaudeInsightsAnalyzer()
+
+    // Credentials cached in memory so the keychain (which can prompt the user
+    // for access after Claude Code's /login recreates the item) is only read
+    // when there is no cached token or the cached one is near expiry.
+    private var cachedCredentials: (credentials: Credentials, source: CredentialSource)?
 
     struct Credentials: Codable {
         var claudeAiOauth: OAuthData?
@@ -48,6 +53,10 @@ actor ClaudeProvider {
     }
 
     func fetchUsage() async throws -> Provider {
+        try await fetchUsage(retriesLeft: 2)
+    }
+
+    private func fetchUsage(retriesLeft: Int) async throws -> Provider {
         guard let loaded = loadCredentials() else {
             return Provider(
                 id: "claude",
@@ -58,10 +67,10 @@ actor ClaudeProvider {
             )
         }
         var credentials = loaded.credentials
-        let source = loaded.source
+        var source = loaded.source
 
         // Refresh token if needed
-        if needsRefresh(credentials.claudeAiOauth) {
+        if Self.needsRefresh(credentials.claudeAiOauth) {
             if let refreshed = try? await refreshToken(credentials: &credentials) {
                 credentials.claudeAiOauth?.accessToken = refreshed
                 saveCredentials(credentials, to: source)
@@ -101,19 +110,34 @@ actor ClaudeProvider {
         }
 
         if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-            // Try refresh and retry once
-            if let refreshed = try? await refreshToken(credentials: &credentials) {
-                credentials.claudeAiOauth?.accessToken = refreshed
-                saveCredentials(credentials, to: source)
-                return try await fetchUsage() // Retry
-            }
-            return Provider(
+            let expiredProvider = Provider(
                 id: "claude",
                 name: "Claude",
                 icon: "brain",
                 items: [],
                 status: .error("Token expired. Run `claude` to log in again.")
             )
+            guard retriesLeft > 0 else { return expiredProvider }
+
+            // The token may have been rotated behind our back (e.g. /login in
+            // Claude Code recreates the keychain item) — re-read the store and
+            // retry with the new token before attempting our own refresh.
+            if let reloaded = loadCredentials(forceReload: true) {
+                credentials = reloaded.credentials
+                source = reloaded.source
+                if let newOauth = reloaded.credentials.claudeAiOauth,
+                   newOauth.accessToken != oauth.accessToken,
+                   !Self.needsRefresh(newOauth) {
+                    return try await fetchUsage(retriesLeft: retriesLeft - 1)
+                }
+            }
+            // Fall back to refreshing the token ourselves, then retry
+            if let refreshed = try? await refreshToken(credentials: &credentials) {
+                credentials.claudeAiOauth?.accessToken = refreshed
+                saveCredentials(credentials, to: source)
+                return try await fetchUsage(retriesLeft: retriesLeft - 1)
+            }
+            return expiredProvider
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
@@ -202,15 +226,20 @@ actor ClaudeProvider {
         )
     }
 
-    private func loadCredentials() -> (credentials: Credentials, source: CredentialSource)? {
+    private func loadCredentials(forceReload: Bool = false) -> (credentials: Credentials, source: CredentialSource)? {
+        if !forceReload, let cached = cachedCredentials,
+           !Self.needsRefresh(cached.credentials.claudeAiOauth) {
+            return cached
+        }
+        let loaded: (credentials: Credentials, source: CredentialSource)?
         if let creds = loadFromKeychain() {
-            return (creds, .keychain)
+            loaded = (creds, .keychain)
+        } else {
+            let fileURL = credentialsFileURL()
+            loaded = loadFromFile(fileURL).map { ($0, .file(fileURL)) }
         }
-        let fileURL = credentialsFileURL()
-        if let creds = loadFromFile(fileURL) {
-            return (creds, .file(fileURL))
-        }
-        return nil
+        cachedCredentials = loaded
+        return loaded
     }
 
     private func credentialsFileURL() -> URL {
@@ -247,6 +276,7 @@ actor ClaudeProvider {
     }
 
     private func saveCredentials(_ credentials: Credentials, to source: CredentialSource) {
+        cachedCredentials = (credentials, source)
         switch source {
         case .keychain:
             guard let data = try? JSONEncoder().encode(credentials) else { return }
@@ -267,10 +297,9 @@ actor ClaudeProvider {
         }
     }
 
-    private func needsRefresh(_ oauth: Credentials.OAuthData?) -> Bool {
+    static func needsRefresh(_ oauth: Credentials.OAuthData?, now: Date = Date()) -> Bool {
         guard let oauth = oauth, let expiresAt = oauth.expiresAt else { return true }
-        let now = Date().timeIntervalSince1970 * 1000
-        return now + refreshBufferMs >= expiresAt
+        return now.timeIntervalSince1970 * 1000 + refreshBufferMs >= expiresAt
     }
 
     private func refreshToken(credentials: inout Credentials) async throws -> String? {

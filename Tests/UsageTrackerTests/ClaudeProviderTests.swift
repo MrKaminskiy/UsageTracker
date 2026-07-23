@@ -48,6 +48,42 @@ struct ClaudeProviderCredentialsTests {
     }
 }
 
+@Suite("ClaudeProvider token expiry (drives keychain cache reuse)")
+struct ClaudeProviderNeedsRefreshTests {
+
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func oauth(expiresInMs offset: Double?) -> ClaudeProvider.Credentials.OAuthData {
+        .init(
+            accessToken: "sk-test",
+            refreshToken: "sk-refresh",
+            expiresAt: offset.map { now.timeIntervalSince1970 * 1000 + $0 },
+            subscriptionType: nil
+        )
+    }
+
+    @Test("Token expiring well beyond the buffer does not need refresh")
+    func farFutureExpiry() {
+        #expect(!ClaudeProvider.needsRefresh(oauth(expiresInMs: 60 * 60 * 1000), now: now))
+    }
+
+    @Test("Token inside the 5-minute buffer needs refresh")
+    func withinBuffer() {
+        #expect(ClaudeProvider.needsRefresh(oauth(expiresInMs: 4 * 60 * 1000), now: now))
+    }
+
+    @Test("Expired token needs refresh")
+    func expired() {
+        #expect(ClaudeProvider.needsRefresh(oauth(expiresInMs: -1000), now: now))
+    }
+
+    @Test("Missing expiry or missing oauth needs refresh")
+    func missingData() {
+        #expect(ClaudeProvider.needsRefresh(oauth(expiresInMs: nil), now: now))
+        #expect(ClaudeProvider.needsRefresh(nil, now: now))
+    }
+}
+
 @Suite("ClaudeProvider extra credits and plan label")
 struct ClaudeProviderExtrasTests {
 

@@ -3,11 +3,20 @@ import SwiftUI
 
 struct ProviderRow: View {
     @Binding var provider: Provider
+    var hidesExtraUsage: Bool = false
     var isDisplayedInBar: Bool = false
     var isPinned: (String) -> Bool = { _ in false }
     var onTogglePin: ((String) -> Void)? = nil
     var onOpenDetail: (() -> Void)? = nil
     @State private var isCardHovered = false
+
+    private var displayedItems: [UsageItem] {
+        provider.items.filter { !hidesExtraUsage || $0.kind != .extraUsage }
+    }
+
+    private var displayedMaxPercentage: Double {
+        displayedItems.map(\.percentage).max() ?? 0
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,14 +36,14 @@ struct ProviderRow: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 10)
-            } else if provider.isExpanded && !provider.items.isEmpty {
+            } else if provider.isExpanded && !displayedItems.isEmpty {
                 // Find the first item with max percentage (used when nothing is pinned)
-                let maxItemId = provider.items.max(by: { $0.percentage < $1.percentage })?.id
-                let hasPinnedItem = provider.items.contains { isPinned($0.stablePinKey) }
+                let maxItemId = displayedItems.max(by: { $0.percentage < $1.percentage })?.id
+                let hasPinnedItem = displayedItems.contains { isPinned($0.stablePinKey) }
 
                 // Inset content area
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(provider.items) { item in
+                    ForEach(displayedItems) { item in
                         let itemIsPinned = isPinned(item.stablePinKey)
                         // Show green dot if: pinned, OR (no pin anywhere AND this is max in displayed provider)
                         let showDot = itemIsPinned || (!hasPinnedItem && isDisplayedInBar && item.id == maxItemId)
@@ -170,7 +179,7 @@ struct ProviderRow: View {
                     .font(.system(size: 10))
                     .foregroundColor(.orange)
             case .loaded:
-                Text("\(Int(provider.maxPercentage))%")
+                Text("\(Int(displayedMaxPercentage))%")
                     .font(.system(size: 11))
                     .monospacedDigit()
                     .foregroundColor(.secondary)

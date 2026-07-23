@@ -73,8 +73,15 @@ actor ClaudeInsightsAnalyzer {
         return nil
     }
 
+    /// Default/floor for the active-chat recency window: a chat only counts as "active" for the
+    /// context alert if its last turn is newer than this, so a stale large session (Claude closed,
+    /// chat cleared/switched, or app restarted hours later) doesn't fire a misleading notification.
+    /// Callers widen it to at least the refresh interval so a crossing isn't missed between refreshes.
+    static let activeRecencyWindow: TimeInterval = 15 * 60
+
     static func aggregate(recentEvents: [TranscriptEvent], monthlyCost: Double, now: Date, calendar: Calendar = .current,
-                          sessionMeta: [String: SessionMeta] = [:]) -> ClaudeInsights {
+                          sessionMeta: [String: SessionMeta] = [:],
+                          activeRecency: TimeInterval = activeRecencyWindow) -> ClaudeInsights {
         var insights = ClaudeInsights(monthlyCost: monthlyCost)
 
         let windowStart = now.addingTimeInterval(-24 * 3600)
@@ -89,6 +96,21 @@ actor ClaudeInsightsAnalyzer {
                 patches.append(p)
             default:
                 break
+            }
+        }
+
+        // Active chat = the most recent main-thread (non-sidechain) turn, but only if that turn
+        // is recent (see activeRecencyWindow) — a large session last touched hours ago is history,
+        // not the chat the user is in now. Its context is the live size being carried; drives the
+        // "context too large" alert. Sidechain turns run at their own smaller context and don't
+        // reflect the main chat, so they're excluded.
+        let activeCutoff = now.addingTimeInterval(-activeRecency)
+        if let active = usage24.filter({ !$0.isSidechain }).max(by: { $0.timestamp < $1.timestamp }),
+           active.timestamp >= activeCutoff {
+            insights.activeContextTokens = active.contextTokens
+            insights.activeSessionId = active.sessionId
+            if let sid = active.sessionId {
+                insights.activeSessionTitle = sessionMeta[sid]?.title ?? sessionMeta[sid]?.project
             }
         }
 
@@ -216,7 +238,8 @@ actor ClaudeInsightsAnalyzer {
 
     private var fileCache: [String: FileSummary] = [:]
 
-    func analyze(projectsDir: URL? = nil, now: Date = Date()) async -> ClaudeInsights? {
+    func analyze(projectsDir: URL? = nil, now: Date = Date(),
+                 activeRecency: TimeInterval = activeRecencyWindow) async -> ClaudeInsights? {
         let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
 
@@ -277,7 +300,7 @@ actor ClaudeInsightsAnalyzer {
         }
 
         return Self.aggregate(recentEvents: recentEvents, monthlyCost: totalCost, now: now,
-                              calendar: calendar, sessionMeta: sessionMeta)
+                              calendar: calendar, sessionMeta: sessionMeta, activeRecency: activeRecency)
     }
 
     private static func parseFile(at url: URL, modDate: Date, size: Int, monthKey: String,

@@ -43,7 +43,7 @@ struct DisplayTab: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Hide not connected")
-                            Text("Hides providers from the menu bar popover when they have no API key, aren't signed in, or failed to authenticate.")
+                            Text("Hides providers from the menu bar popover when they have no API key or aren't signed in.")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -52,6 +52,27 @@ struct DisplayTab: View {
                         Toggle("", isOn: Binding(
                             get: { appState.config.hideNotConnected },
                             set: { appState.updateHideNotConnected($0) }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                    }
+                    .settingsRowPadding()
+
+                    SettingsCardDivider()
+
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show Claude extra credits")
+                            Text("Shows the Extra credits row in the menu bar popover. It remains available in Claude details when hidden.")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { appState.config.shouldShowExtraUsageInPopover },
+                            set: { appState.updateShowExtraUsageInPopover($0) }
                         ))
                         .labelsHidden()
                         .toggleStyle(.switch)
@@ -118,7 +139,7 @@ struct DisplayTab: View {
     }
 
     private func menuBarOptions() -> [MenuBarOption] {
-        appState.visibleProviders.flatMap { provider in
+        appState.popoverProviders.flatMap { provider in
             provider.items.map { item in
                 MenuBarOption(providerId: provider.id, providerName: provider.name, displayLabel: item.label, pinKey: item.stablePinKey)
             }

@@ -107,6 +107,41 @@ struct AppStateRefreshIntervalTests {
     }
 }
 
+@Suite("Popover item visibility")
+@MainActor
+struct PopoverItemVisibilityTests {
+
+    @Test("Hidden extra usage is excluded from rows, pinning, and menu bar percentage")
+    func hidesExtraUsageEverywhereInPopover() {
+        let appState = AppState()
+        appState.config.hideNotConnected = false
+        appState.config.enabledProviders = ["claude": true]
+        appState.config.providerOrder = ["claude"]
+        appState.providers = [Provider(
+            id: "claude",
+            name: "Claude",
+            icon: "brain",
+            items: [
+                UsageItem(label: "Session", current: 40, limit: 100, resetLabel: nil),
+                UsageItem(label: "Extra credits", current: 90, limit: 100,
+                          resetLabel: nil, kind: .extraUsage)
+            ],
+            status: .loaded
+        )]
+        appState.config.pinnedItem = PinnedItem(providerId: "claude", itemLabel: "Extra credits")
+        appState.config.showExtraUsageInPopover = false
+
+        #expect(appState.popoverProviders.first?.items.map(\.label) == ["Session"])
+        #expect(appState.pinnedItem == nil)
+        #expect(appState.maxPercentage == 40)
+
+        appState.config.showExtraUsageInPopover = true
+        #expect(appState.popoverProviders.first?.items.count == 2)
+        #expect(appState.pinnedItem != nil)
+        #expect(appState.maxPercentage == 90)
+    }
+}
+
 @Suite("AppState transient-failure detection")
 @MainActor
 struct AppStateTransientFailureTests {

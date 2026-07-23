@@ -181,6 +181,53 @@ struct ClaudeInsightsAggregationTests {
         #expect(insights.hasWarnings == false)
     }
 
+    @Test("Active chat = latest recent main-thread turn's context, session, and title")
+    func activeChat() {
+        let meta: [String: SessionMeta] = ["B": SessionMeta(title: "current work", project: "app")]
+        let events = [
+            usage(hoursAgo: 3, tokens: 100_000, contextTokens: 90_000, session: "A"),
+            usage(hoursAgo: 0.1, tokens: 200_000, contextTokens: 170_000, session: "B"),  // most recent main turn (~6m)
+            usage(hoursAgo: 0.05, tokens: 50_000, contextTokens: 40_000, sidechain: true, session: "B"), // subagent — ignored
+        ]
+        let insights = ClaudeInsightsAnalyzer.aggregate(
+            recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar, sessionMeta: meta)
+        #expect(insights.activeContextTokens == 170_000)   // not the newer sidechain's 40k
+        #expect(insights.activeSessionId == "B")
+        #expect(insights.activeSessionTitle == "current work")
+    }
+
+    @Test("Stale large chat (last turn beyond the recency window) is not treated as active")
+    func activeChatStale() {
+        // Newest main-thread turn is 1h old — inside the 24h window (so it still counts toward
+        // share/avg) but well beyond the 15-min active-recency window.
+        let events = [usage(hoursAgo: 1, tokens: 200_000, contextTokens: 170_000, session: "A")]
+        let insights = ClaudeInsightsAnalyzer.aggregate(recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar)
+        #expect(insights.activeContextTokens == nil)
+        #expect(insights.activeSessionId == nil)
+        #expect(insights.avgContextTokens == 170_000)  // still part of the 24h aggregate
+    }
+
+    @Test("A wider recency window (long refresh interval) keeps a not-too-old chat active")
+    func activeChatWiderRecency() {
+        let events = [usage(hoursAgo: 0.4, tokens: 200_000, contextTokens: 170_000, session: "A")]  // ~24m ago
+        // Default 15-min window → stale.
+        let dflt = ClaudeInsightsAnalyzer.aggregate(recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar)
+        #expect(dflt.activeContextTokens == nil)
+        // 35-min window (e.g. a 30-min refresh interval + buffer) → still active.
+        let wide = ClaudeInsightsAnalyzer.aggregate(recentEvents: events, monthlyCost: 0, now: now,
+                                                    calendar: utcCalendar, activeRecency: 35 * 60)
+        #expect(wide.activeContextTokens == 170_000)
+        #expect(wide.activeSessionId == "A")
+    }
+
+    @Test("Active chat nil when no 24h data")
+    func activeChatEmpty() {
+        let events = [usage(hoursAgo: 30, tokens: 1000, contextTokens: 500)]
+        let insights = ClaudeInsightsAnalyzer.aggregate(recentEvents: events, monthlyCost: 0, now: now, calendar: utcCalendar)
+        #expect(insights.activeContextTokens == nil)
+        #expect(insights.activeSessionId == nil)
+    }
+
     @Test("Today stats: cost, tokens, distinct main sessions, patch lines; midnight boundary")
     func todayStats() {
         // now is 12:00 UTC → today started 12h ago

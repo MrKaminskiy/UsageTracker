@@ -64,7 +64,7 @@ struct MenuBarView: View {
 
     private var listScreen: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if appState.visibleProviders.isEmpty && !appState.isLoading {
+            if appState.popoverProviders.isEmpty && !appState.isLoading {
                 emptyState
             } else {
                 providerList
@@ -116,23 +116,24 @@ struct MenuBarView: View {
     }
 
     private var maxProvider: Provider? {
-        appState.visibleProviders.max(by: { $0.maxPercentage < $1.maxPercentage })
+        appState.popoverProviders.max(by: { $0.maxPercentage < $1.maxPercentage })
     }
 
     private var displayedProvider: Provider? {
         // If pinned, return that provider; otherwise return max
         if let pinned = appState.pinnedItem {
-            return appState.visibleProviders.first { $0.id == pinned.providerId }
+            return appState.popoverProviders.first { $0.id == pinned.providerId }
         }
         return maxProvider
     }
 
     private var providerList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(appState.visibleProviders) { provider in
+            ForEach(appState.popoverProviders) { provider in
                 if let index = appState.providers.firstIndex(where: { $0.id == provider.id }) {
                     ProviderRow(
                         provider: $appState.providers[index],
+                        hidesExtraUsage: !appState.config.shouldShowExtraUsageInPopover,
                         isDisplayedInBar: provider.id == displayedProvider?.id && appState.maxPercentage > 0,
                         isPinned: { itemLabel in
                             appState.isPinned(providerId: provider.id, itemLabel: itemLabel)

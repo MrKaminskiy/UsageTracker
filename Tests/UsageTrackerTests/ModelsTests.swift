@@ -92,4 +92,16 @@ struct AppConfigTests {
         let config = AppConfig()
         #expect(config.refreshIntervalMinutes == 5)
     }
+
+    @Test("Extra usage is shown by default")
+    func extraUsageDefault() {
+        #expect(AppConfig().shouldShowExtraUsageInPopover)
+    }
+
+    @Test("Config without extra-usage preference decodes with default")
+    func missingExtraUsagePreference() throws {
+        let data = try JSONEncoder().encode(AppConfig())
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
+        #expect(decoded.shouldShowExtraUsageInPopover)
+    }
 }

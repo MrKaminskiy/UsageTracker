@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum UsageItemKind: Equatable, Hashable {
+    case standard
+    case extraUsage
+}
+
 struct UsageItem: Identifiable, Equatable {
     let id = UUID()
     let label: String
@@ -9,6 +14,7 @@ struct UsageItem: Identifiable, Equatable {
     var resetsAt: Date? = nil
     /// Stable identity for pin persistence, independent of the display label (which can vary, e.g. Codex's window duration labels). Falls back to `label` when a provider doesn't set one.
     var pinKey: String? = nil
+    var kind: UsageItemKind = .standard
 
     var stablePinKey: String { pinKey ?? label }
 
@@ -91,6 +97,12 @@ struct AppConfig: Codable {
     var hideNotConnected: Bool = true
     var hasCompletedOnboarding: Bool = false
     var showCostEstimate: Bool = false
+    // Optional for backward-compatible decoding of config files written by older builds.
+    var showExtraUsageInPopover: Bool? = nil  // nil → on by default
+    // Alert when the active Claude chat's context grows large. Optionals so a config.json
+    // written by an older build (which lacks these keys) still decodes instead of resetting.
+    var contextAlertEnabled: Bool? = nil        // nil → on by default
+    var contextAlertThresholdK: Int? = nil      // threshold in thousands of tokens; nil → 150
     var pinnedItem: PinnedItem? = nil
     var enabledProviders: [String: Bool] = [
         "claude": true,
@@ -116,4 +128,9 @@ struct AppConfig: Codable {
     func isProviderEnabled(_ id: String) -> Bool {
         enabledProviders[id] ?? true
     }
+
+    var isContextAlertEnabled: Bool { contextAlertEnabled ?? true }
+    var shouldShowExtraUsageInPopover: Bool { showExtraUsageInPopover ?? true }
+    /// Effective threshold in tokens (default 150k).
+    var contextAlertThreshold: Int { (contextAlertThresholdK ?? 150) * 1000 }
 }

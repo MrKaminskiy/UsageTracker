@@ -328,7 +328,8 @@ actor ClaudeProvider {
             label: "Extra credits",
             current: used,
             limit: limit,
-            resetLabel: "\(formatCredits(used))/\(formatCredits(limit))"
+            resetLabel: "\(formatCredits(used))/\(formatCredits(limit))",
+            kind: .extraUsage
         )
     }
 

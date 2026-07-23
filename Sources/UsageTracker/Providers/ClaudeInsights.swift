@@ -43,6 +43,11 @@ struct ClaudeInsights: Equatable, Sendable {
     var heaviestSessions: [HeavySession] = [] // chats driving the >150k share, ranked
     var today: TodayStats? = nil              // nil when nothing happened today
 
+    // The currently-active chat (most recent main-thread turn), for the context-size alert.
+    var activeContextTokens: Int? = nil       // its latest context (input+cache); nil when no 24h data
+    var activeSessionId: String? = nil        // session id of that chat, for alert de-duplication
+    var activeSessionTitle: String? = nil     // aiTitle/project of that chat, for the alert body
+
     static let contextWarningThreshold: Double = 40
     static let subagentWarningThreshold: Double = 30
 

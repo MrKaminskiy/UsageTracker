@@ -62,6 +62,7 @@ struct ClaudeProviderExtrasTests {
         let item = ClaudeProvider.extraCreditsItem(from: extra)
         #expect(item != nil)
         #expect(item?.label == "Extra credits")
+        #expect(item?.kind == .extraUsage)
         #expect(item?.resetLabel == "16.10/50")
         #expect(abs((item?.percentage ?? 0) - 32.2) < 0.01)
     }

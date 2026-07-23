@@ -84,19 +84,31 @@ class AppState: ObservableObject {
     private let openRouterProvider = OpenRouterProvider()
     private var refreshTimer: Timer?
 
+    private let contextAlertNotifier = ContextAlertNotifier()
+    private var contextAlertState = ContextAlert.State()
+    private var contextAlertInFlight = false
+    // The alert reads transcripts locally and must not depend on the Claude API call succeeding
+    // (rate limit, offline, expired/missing OAuth), so it uses its own analyzer, not the provider's.
+    private let contextAlertAnalyzer = ClaudeInsightsAnalyzer()
+
     var maxPercentage: Double {
         // If there's a pinned item, use its percentage
         if let pinned = config.pinnedItem,
-           let provider = visibleProviders.first(where: { $0.id == pinned.providerId }),
+           let provider = popoverProviders.first(where: { $0.id == pinned.providerId }),
            let item = provider.items.first(where: { $0.stablePinKey == pinned.itemLabel }) {
             return item.percentage
         }
         // Otherwise use the max across all visible providers
-        return visibleProviders.map(\.maxPercentage).max() ?? 0
+        return popoverProviders.map(\.maxPercentage).max() ?? 0
     }
 
     var pinnedItem: PinnedItem? {
-        config.pinnedItem
+        guard let pinned = config.pinnedItem,
+              popoverProviders.contains(where: { provider in
+                  provider.id == pinned.providerId
+                      && provider.items.contains(where: { $0.stablePinKey == pinned.itemLabel })
+              }) else { return nil }
+        return pinned
     }
 
     func togglePin(providerId: String, itemLabel: String) {
@@ -119,12 +131,21 @@ class AppState: ObservableObject {
     init() {
         loadConfig()
         setupRefreshTimer()
+        // Install the notification delegate + request permission at launch (not lazily on the
+        // first crossing), so foreground alerts show and the grant resolves before any post.
+        if config.isContextAlertEnabled {
+            contextAlertNotifier.configureIfNeeded()
+        }
     }
 
     func refresh() async {
         Log.info("Refreshing providers...")
         isLoading = true
         defer { isLoading = false }
+
+        // The context alert reads transcripts locally; run it concurrently so it never waits on
+        // (or is blocked by a timeout of) the provider API calls below.
+        async let contextAlert: Void = evaluateContextAlert()
 
         // Fetch from all providers concurrently
         async let claudeResult = claudeProvider.fetchUsage()
@@ -201,7 +222,54 @@ class AppState: ObservableObject {
         providers = newProviders
         Log.info("Refresh complete — \(newProviders.count) providers loaded")
         lastUpdated = Date()
+        await contextAlert
         await updateChecker.check()
+    }
+
+    /// Fire a macOS notification when the active Claude chat's context crosses the configured
+    /// threshold. Runs its own local transcript analysis (a free file read, no API cost) so it
+    /// works even when the Claude API call failed. The de-duplication state is committed only
+    /// when the notification is actually delivered, so a dropped/denied alert isn't lost.
+    private func evaluateContextAlert() async {
+        guard config.isContextAlertEnabled else { return }
+        // Serialize: overlapping refreshes (the timer and a popover-triggered refresh) must not
+        // both read the same uncommitted state across the analyze/deliver awaits and post
+        // duplicate alerts. Set synchronously before the first await, so this is atomic on the
+        // main actor; a second evaluation bails until this one finishes.
+        guard !contextAlertInFlight else { return }
+        contextAlertInFlight = true
+        defer { contextAlertInFlight = false }
+
+        // Widen the "active chat" recency window to at least the refresh interval (+ buffer), so a
+        // chat that crosses the threshold just after one refresh and then goes idle isn't judged
+        // stale — and its crossing silently missed — by the next refresh at long intervals.
+        let recency = max(ClaudeInsightsAnalyzer.activeRecencyWindow,
+                          TimeInterval(config.refreshIntervalMinutes * 60) + 5 * 60)
+        guard let insights = await contextAlertAnalyzer.analyze(activeRecency: recency) else { return }
+        // The setting may have been turned off while analysis was suspended.
+        guard config.isContextAlertEnabled else { return }
+
+        let (fire, newState) = ContextAlert.evaluate(
+            currentContext: insights.activeContextTokens,
+            sessionId: insights.activeSessionId,
+            threshold: config.contextAlertThreshold,
+            state: contextAlertState
+        )
+        guard fire else {
+            contextAlertState = newState  // re-arm / no-op transitions always commit; they don't post
+            return
+        }
+        Log.info("Context alert: active chat at ~\((insights.activeContextTokens ?? 0) / 1000)k ≥ \(config.contextAlertThreshold / 1000)k")
+        let delivered = await contextAlertNotifier.notifyContextExceeded(
+            contextTokens: insights.activeContextTokens ?? 0,
+            title: insights.activeSessionTitle,
+            threshold: config.contextAlertThreshold
+        )
+        if delivered {
+            contextAlertState = newState  // commit de-dup only once the alert actually reached the user
+        } else {
+            Log.info("Context alert not delivered — leaving armed to retry next refresh")
+        }
     }
 
     func loadConfig() {
@@ -261,6 +329,29 @@ class AppState: ObservableObject {
         saveConfig()
     }
 
+    func updateShowExtraUsageInPopover(_ show: Bool) {
+        config.showExtraUsageInPopover = show
+        saveConfig()
+    }
+
+    func updateContextAlertEnabled(_ enabled: Bool) {
+        config.contextAlertEnabled = enabled
+        saveConfig()
+        if enabled {
+            contextAlertState = ContextAlert.State()  // re-arm: an already-large chat can alert again
+            contextAlertNotifier.configureIfNeeded()
+        }
+    }
+
+    func updateContextAlertThresholdK(_ thousands: Int) {
+        config.contextAlertThresholdK = thousands
+        saveConfig()
+        // Re-arm every session against the new threshold. Otherwise a chat that already alerted
+        // at the old (lower) threshold keeps its session id in the de-dup set, and if it crosses
+        // the new (higher) threshold before any refresh observes it below, the alert is suppressed.
+        contextAlertState = ContextAlert.State()
+    }
+
     func updateProviderEnabled(_ id: String, enabled: Bool) {
         config.enabledProviders[id] = enabled
         saveConfig()
@@ -310,6 +401,17 @@ class AppState: ObservableObject {
             let indexA = config.providerOrder.firstIndex(of: a.id) ?? Int.max
             let indexB = config.providerOrder.firstIndex(of: b.id) ?? Int.max
             return indexA < indexB
+        }
+    }
+
+    /// Providers and usage items shown in the main menu-bar popover. Detail views continue to
+    /// use the unfiltered provider data so account information remains available there.
+    var popoverProviders: [Provider] {
+        guard !config.shouldShowExtraUsageInPopover else { return visibleProviders }
+        return visibleProviders.map { provider in
+            var filtered = provider
+            filtered.items.removeAll { $0.kind == .extraUsage }
+            return filtered
         }
     }
 

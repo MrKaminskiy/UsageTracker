@@ -8,12 +8,27 @@ actor ClaudeProvider {
     private let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     private let scopes = "user:profile user:inference user:sessions:claude_code user:mcp_servers"
     static let refreshBufferMs: Double = 5 * 60 * 1000 // 5 minutes
+    static let expiryGraceMs: Double = 30 * 1000 // 30 seconds
     private let insightsAnalyzer = ClaudeInsightsAnalyzer()
 
     // Credentials cached in memory so the keychain (which can prompt the user
     // for access after Claude Code's /login recreates the item) is only read
     // when there is no cached token or the cached one is near expiry.
-    private var cachedCredentials: (credentials: Credentials, source: CredentialSource)?
+    private var cachedCredentials: LoadedCredentials?
+
+    // Tokens that were refreshed but could not be written back to the shared store.
+    // Retried on the next fetch: the refresh token they replaced is already dead
+    // server-side, so leaving the store unsaved would eventually cost a `/login`.
+    private var pendingWriteBack: (credentials: LoadedCredentials, spentRefreshToken: String?)?
+
+    private struct LoadedCredentials {
+        var credentials: Credentials
+        // The store's original JSON object. Kept so that writing a refreshed
+        // token back replaces only the token fields and leaves every key Claude
+        // Code owns (scopes, rateLimitTier, …) untouched.
+        var raw: [String: Any]
+        var source: CredentialSource
+    }
 
     struct Credentials: Codable {
         var claudeAiOauth: OAuthData?
@@ -57,7 +72,15 @@ actor ClaudeProvider {
     }
 
     private func fetchUsage(retriesLeft: Int) async throws -> Provider {
-        guard let loaded = loadCredentials() else {
+        if let pending = pendingWriteBack {
+            _ = persist(
+                pending.credentials.credentials,
+                into: pending.credentials,
+                replacing: pending.spentRefreshToken
+            )
+        }
+
+        guard var loaded = loadCredentials() else {
             return Provider(
                 id: "claude",
                 name: "Claude",
@@ -66,18 +89,19 @@ actor ClaudeProvider {
                 status: .notConnected(url: settingsURL)
             )
         }
-        var credentials = loaded.credentials
-        var source = loaded.source
 
-        // Refresh token if needed
-        if Self.needsRefresh(credentials.claudeAiOauth) {
-            if let refreshed = try? await refreshToken(credentials: &credentials) {
-                credentials.claudeAiOauth?.accessToken = refreshed
-                saveCredentials(credentials, to: source)
+        // Claude Code refreshes the shared credentials on its own, and refreshing
+        // rotates the refresh token — doing it ourselves invalidates whatever copy
+        // the CLI still holds. loadCredentials() has already re-read the store for
+        // anything near expiry, so only step in once the token is really dead.
+        if Self.isExpired(loaded.credentials.claudeAiOauth) {
+            let spent = loaded.credentials.claudeAiOauth?.refreshToken
+            if let refreshed = await refreshedCredentials(from: loaded.credentials) {
+                loaded = persist(refreshed, into: loaded, replacing: spent)
             }
         }
 
-        guard let oauth = credentials.claudeAiOauth else {
+        guard let oauth = loaded.credentials.claudeAiOauth else {
             return Provider(
                 id: "claude",
                 name: "Claude",
@@ -123,18 +147,17 @@ actor ClaudeProvider {
             // Claude Code recreates the keychain item) — re-read the store and
             // retry with the new token before attempting our own refresh.
             if let reloaded = loadCredentials(forceReload: true) {
-                credentials = reloaded.credentials
-                source = reloaded.source
+                loaded = reloaded
                 if let newOauth = reloaded.credentials.claudeAiOauth,
                    newOauth.accessToken != oauth.accessToken,
-                   !Self.needsRefresh(newOauth) {
+                   !Self.isExpired(newOauth) {
                     return try await fetchUsage(retriesLeft: retriesLeft - 1)
                 }
             }
             // Fall back to refreshing the token ourselves, then retry
-            if let refreshed = try? await refreshToken(credentials: &credentials) {
-                credentials.claudeAiOauth?.accessToken = refreshed
-                saveCredentials(credentials, to: source)
+            let spent = loaded.credentials.claudeAiOauth?.refreshToken
+            if let refreshed = await refreshedCredentials(from: loaded.credentials) {
+                _ = persist(refreshed, into: loaded, replacing: spent)
                 return try await fetchUsage(retriesLeft: retriesLeft - 1)
             }
             return expiredProvider
@@ -226,20 +249,31 @@ actor ClaudeProvider {
         )
     }
 
-    private func loadCredentials(forceReload: Bool = false) -> (credentials: Credentials, source: CredentialSource)? {
+    private func loadCredentials(forceReload: Bool = false) -> LoadedCredentials? {
         if !forceReload, let cached = cachedCredentials,
            !Self.needsRefresh(cached.credentials.claudeAiOauth) {
             return cached
         }
-        let loaded: (credentials: Credentials, source: CredentialSource)?
-        if let creds = loadFromKeychain() {
-            loaded = (creds, .keychain)
-        } else {
-            let fileURL = credentialsFileURL()
-            loaded = loadFromFile(fileURL).map { ($0, .file(fileURL)) }
-        }
+        let loaded = read(from: .keychain) ?? read(from: .file(credentialsFileURL()))
         cachedCredentials = loaded
         return loaded
+    }
+
+    private func read(from source: CredentialSource) -> LoadedCredentials? {
+        let store: (credentials: Credentials, raw: [String: Any])?
+        switch source {
+        case .keychain: store = loadFromKeychain()
+        case .file(let url): store = loadFromFile(url)
+        }
+        return store.map { LoadedCredentials(credentials: $0.credentials, raw: $0.raw, source: source) }
+    }
+
+    private func decode(_ data: Data) -> (credentials: Credentials, raw: [String: Any])? {
+        guard let credentials = try? JSONDecoder().decode(Credentials.self, from: data),
+              let raw = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        return (credentials, raw)
     }
 
     private func credentialsFileURL() -> URL {
@@ -247,7 +281,7 @@ actor ClaudeProvider {
             .appendingPathComponent(".claude/.credentials.json")
     }
 
-    private func loadFromKeychain() -> Credentials? {
+    private func loadFromKeychain() -> (credentials: Credentials, raw: [String: Any])? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -258,28 +292,93 @@ actor ClaudeProvider {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
 
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let credentials = try? JSONDecoder().decode(Credentials.self, from: data) else {
-            return nil
-        }
-
-        return credentials
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return decode(data)
     }
 
-    private func loadFromFile(_ url: URL) -> Credentials? {
-        guard let data = try? Data(contentsOf: url),
-              let credentials = try? JSONDecoder().decode(Credentials.self, from: data) else {
-            return nil
-        }
-        return credentials
+    private func loadFromFile(_ url: URL) -> (credentials: Credentials, raw: [String: Any])? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return decode(data)
     }
 
-    private func saveCredentials(_ credentials: Credentials, to source: CredentialSource) {
-        cachedCredentials = (credentials, source)
-        switch source {
+    // Writes refreshed tokens back into the store Claude Code shares with us,
+    // replacing only the token fields inside the original JSON object. Re-encoding
+    // our own `Credentials` struct here used to drop every key we don't model
+    // (scopes, rateLimitTier, …), which broke the CLI's session and forced a
+    // `/login` roughly once a day — once per access-token lifetime.
+    //
+    // `spentRefreshToken` is the token the refresh consumed. The store is re-read
+    // right before writing: if it no longer holds that token, Claude Code logged in
+    // or refreshed while our request was in flight, and its credentials are newer
+    // than ours — adopt them instead of clobbering them with our stale snapshot.
+    //
+    // The check and the write are not atomic — SecItem offers no compare-and-swap,
+    // and no lock is shared with the CLI — so a write started in the microseconds
+    // between them can still be lost. That residual window is accepted: skipping
+    // the write entirely would leave the store holding a refresh token the server
+    // has already rotated away, which is the very failure this guards against.
+    private func persist(
+        _ credentials: Credentials,
+        into loaded: LoadedCredentials,
+        replacing spentRefreshToken: String?
+    ) -> LoadedCredentials {
+        guard let oauth = credentials.claudeAiOauth else { return loaded }
+
+        var base = loaded
+        if let current = read(from: loaded.source) {
+            guard !Self.storeMovedOn(current.credentials.claudeAiOauth, spentRefreshToken: spentRefreshToken) else {
+                cachedCredentials = current
+                pendingWriteBack = nil
+                Log.info("Claude: credential store changed while refreshing; keeping Claude Code's newer tokens")
+                return current
+            }
+            base = current
+        }
+
+        var updated = base
+        updated.credentials = credentials
+        updated.raw = Self.merging(oauth, into: base.raw)
+
+        cachedCredentials = updated
+        // A refresh rotates the refresh token, so the copy left in the store is
+        // already dead: a failed write has to be retried, not forgotten.
+        pendingWriteBack = write(updated) ? nil : (updated, spentRefreshToken)
+        return updated
+    }
+
+    // True when the shared store no longer holds the refresh token our refresh
+    // consumed: Claude Code logged in or refreshed in the meantime, so what is in
+    // the store is newer than what we are holding and must not be overwritten.
+    static func storeMovedOn(_ stored: Credentials.OAuthData?, spentRefreshToken: String?) -> Bool {
+        stored?.refreshToken != spentRefreshToken
+    }
+
+    // Replaces only the token fields of a store's JSON object; every other key,
+    // at both levels, is carried over untouched.
+    static func merging(_ oauth: Credentials.OAuthData, into raw: [String: Any]) -> [String: Any] {
+        var raw = raw
+        var oauthObject = raw["claudeAiOauth"] as? [String: Any] ?? [:]
+        oauthObject["accessToken"] = oauth.accessToken
+        if let refreshToken = oauth.refreshToken {
+            oauthObject["refreshToken"] = refreshToken
+        }
+        if let expiresAt = oauth.expiresAt {
+            // Claude Code writes epoch milliseconds as an integer; keep it that way.
+            oauthObject["expiresAt"] = expiresAt == expiresAt.rounded() ? Int(expiresAt) : expiresAt
+        }
+        raw["claudeAiOauth"] = oauthObject
+        return raw
+    }
+
+    private func write(_ loaded: LoadedCredentials) -> Bool {
+        guard JSONSerialization.isValidJSONObject(loaded.raw),
+              let data = try? JSONSerialization.data(withJSONObject: loaded.raw) else {
+            Log.error("Claude: could not serialize refreshed credentials; keeping them in memory only")
+            return false
+        }
+
+        switch loaded.source {
         case .keychain:
-            guard let data = try? JSONEncoder().encode(credentials) else { return }
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: keychainService
@@ -287,19 +386,50 @@ actor ClaudeProvider {
             let attributes: [String: Any] = [
                 kSecValueData as String: data
             ]
-            SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        case .file:
-            // Skip persisting to ~/.claude/.credentials.json — Claude Code CLI owns
-            // the file and stores fields beyond our schema (scopes, rateLimitTier)
-            // that a round-trip would strip. The refreshed access token is used
-            // in-memory for this session; Claude Code refreshes its own copy.
-            break
+            let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            if status != errSecSuccess {
+                // Refreshing rotated the refresh token server-side, so the copy still
+                // in the keychain is now dead: Claude Code will ask for /login unless
+                // the retry lands. Say so instead of failing silently.
+                Log.error("Claude: keychain update failed (OSStatus \(status)); will retry, Claude Code may need `/login`")
+                return false
+            }
+            return true
+        case .file(let url):
+            do {
+                try data.write(to: url, options: [.atomic])
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600], ofItemAtPath: url.path
+                )
+                return true
+            } catch {
+                Log.error("Claude: could not write \(url.path) (\(error.localizedDescription)); will retry, Claude Code may need `/login`")
+                return false
+            }
         }
     }
 
+    // Whether the in-memory cache may still be used, or the shared store has to be
+    // re-read. Deliberately eager (5-minute buffer): re-reading is cheap and picks
+    // up a token Claude Code refreshed on its own.
     static func needsRefresh(_ oauth: Credentials.OAuthData?, now: Date = Date()) -> Bool {
         guard let oauth = oauth, let expiresAt = oauth.expiresAt else { return true }
         return now.timeIntervalSince1970 * 1000 + refreshBufferMs >= expiresAt
+    }
+
+    // Whether *we* should spend the refresh token. Kept as tight as possible
+    // (hard expiry + 30s of slack) because refreshing rotates the token and
+    // invalidates the copy Claude Code holds. An unknown expiry is treated as
+    // valid: the 401 path refreshes if the token really is dead.
+    static func isExpired(_ oauth: Credentials.OAuthData?, now: Date = Date()) -> Bool {
+        guard let oauth = oauth, let expiresAt = oauth.expiresAt else { return false }
+        return now.timeIntervalSince1970 * 1000 + expiryGraceMs >= expiresAt
+    }
+
+    private func refreshedCredentials(from credentials: Credentials) async -> Credentials? {
+        var updated = credentials
+        guard (try? await refreshToken(credentials: &updated)) != nil else { return nil }
+        return updated
     }
 
     private func refreshToken(credentials: inout Credentials) async throws -> String? {

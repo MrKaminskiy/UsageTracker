@@ -5,7 +5,7 @@ macOS menu bar app for tracking AI service usage limits.
 ## Tech Stack
 - Swift, SwiftUI, AppKit
 - Swift Package Manager
-- macOS 13+
+- macOS 14+ (the Settings UI uses `onChange(of:initial:_:)`, which is 14.0-only — `Package.swift`, `Info.plist`, and the README must all agree on this)
 
 ## Build & Run
 ```bash
@@ -29,12 +29,15 @@ Located in `Sources/UsageTracker/Providers/`. Each provider fetches usage from a
 - `App.swift` - AppDelegate, AppState (main state management)
 - `StatusBarController.swift` - Menu bar icon, popover, context menu, settings/onboarding windows
 - `Models.swift` - Provider, UsageItem, AppConfig
+- `UpdateChecker.swift` - Polls the GitHub Releases API for a newer version; surfaced in the About tab
+- `ContextAlert.swift` - Decides when to fire the Claude context-size notification
 - `Views/MenuBarView.swift` - Main popover content
 - `Views/ProviderRow.swift` - Individual provider display with usage bars
-- `Views/SettingsView.swift` - Settings with provider toggles, API keys, drag-to-reorder
+- `Views/Settings/` - Settings window: `SettingsContent.swift` (shell), `Tabs/` (General, Providers, Display, Help, About), `Components/`, `SettingsDesign.swift` (shared tokens)
 - `Views/OnboardingView.swift` - First-launch welcome screen
-- `Providers/ClaudeInsightsAnalyzer.swift` - Incremental transcript analysis: monthly cost + 24h usage insights (replaces ClaudeCostEstimator)
-- `Views/ClaudeDetailView.swift` - Claude drill-in page: limit bars, insights, skills/agents breakdown, today stats
+- `Providers/ClaudeInsightsAnalyzer.swift` - Incremental transcript analysis: monthly cost + 24h usage insights
+- `Providers/CodexInsightsAnalyzer.swift` - Same for Codex session logs
+- `Views/ClaudeDetailView.swift` / `Views/CodexDetailView.swift` - Drill-in pages: limit bars, insights, skills/agents breakdown, today stats
 
 ### Config
 User config stored in `~/.usagetracker/`:
@@ -63,19 +66,6 @@ User config stored in `~/.usagetracker/`:
 | OpenRouter | API key | Credits used % or monthly/daily spend | Experimental |
 | Runway | API key | Credit balance | **Untested — hidden by default** |
 | Stability | API key | Credit balance | **Untested — hidden by default** |
-
-## Definition of Done (pre-public release)
-
-- [ ] `swift test` passes with all new integration tests
-- [ ] Session % and Weekly % display correctly for a logged-in Claude account
-- [ ] Cost estimate shows for current month (requires `~/.claude/projects/` with .jsonl files)
-- [ ] Cursor and Codex auto-detect on a machine where they're installed
-- [ ] OpenAI, ElevenLabs, OpenRouter: verified working with real keys
-- [ ] Runway and Stability are hidden by default
-- [ ] Default refresh interval is 5 minutes
-- [ ] `make release` completes without errors from a clean build
-- [ ] App signed and notarized (DMG produced)
-- [ ] README complete with all sections
 
 ## Known Issues
 

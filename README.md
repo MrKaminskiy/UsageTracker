@@ -18,14 +18,11 @@ Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, Eleve
 
 1. Download `UsageTracker.dmg` from [Releases](../../releases)
 2. Open the DMG and drag UsageTracker to Applications
-3. First launch: macOS may block an unsigned build — run this once in Terminal:
-   ```bash
-   xattr -cr ~/Applications/UsageTracker.app
-   ```
-   (Signed builds from GitHub Releases don't need this step.)
-4. Launch UsageTracker from Applications
+3. Launch UsageTracker from Applications
 
-**Requirements:** macOS 13+, [Claude Code](https://claude.ai/code) installed and logged in
+Builds on the Releases page are signed with a Developer ID and notarized by Apple, so Gatekeeper lets them open without extra steps. If you build from source yourself, macOS will quarantine the unsigned bundle — clear it once with `xattr -cr /Applications/UsageTracker.app`.
+
+**Requirements:** macOS 14+, [Claude Code](https://claude.ai/code) installed and logged in
 
 ## What it shows
 
@@ -43,7 +40,7 @@ UsageTracker reads your usage data locally — no accounts, no telemetry.
 ## Usage
 
 - **Left-click** the menu bar icon — open usage popover
-- **Right-click** the menu bar icon — Settings, Refresh, Quit
+- **Right-click** the menu bar icon — Settings, Clear Cache, Quit
 - The icon color reflects your highest current usage (green → orange → red)
 - Pin any metric to the menu bar via the dot indicator in the popover
 
@@ -71,7 +68,7 @@ make test
 - **Password prompt on first launch**: UsageTracker reads Claude Code's stored login from your macOS Keychain. Click "Always Allow" once and you won't be asked again.
 - **Runway and Stability**: Providers are implemented but not yet verified. They are hidden by default. You can enable them in Settings.
 - **Cost estimate**: Reads `~/.claude/projects/*.jsonl` files. Accurate for Claude Code usage; does not include API usage outside Claude Code.
-- **macOS 13+ required**: The app uses SwiftUI features not available on earlier versions.
+- **macOS 14+ required**: The app uses SwiftUI features not available on earlier versions.
 
 ## License
 

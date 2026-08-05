@@ -8,7 +8,7 @@ set -euo pipefail
 APP_NAME="UsageTracker"
 BUNDLE_DIR="build/${APP_NAME}.app"
 DEST="/Applications/${APP_NAME}.app"
-IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Nikita Kaminsky (8L59Y7G4M7)}"
+IDENTITY="${CODESIGN_IDENTITY:?Set CODESIGN_IDENTITY to your Developer ID Application certificate name}"
 BIN=".build/release/${APP_NAME}"
 
 [ -x "$BIN" ] || { echo "error: $BIN not found — run 'swift build -c release' first"; exit 1; }

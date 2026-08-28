@@ -69,7 +69,9 @@ User config stored in `~/.usagetracker/`:
 
 ## Known Issues
 
-- **Keychain password prompt**: The app reads Claude Code CLI's keychain credentials (`"Claude Code-credentials"`). macOS may prompt for permission. Clicking "Always Allow" persists for the life of the signed app identity. Fixed permanently by code signing (users never see it again after first launch).
+- **Keychain password prompt**: The app reads Claude Code CLI's keychain credentials (`"Claude Code-credentials"`). macOS may prompt once for permission; "Always Allow" persists for the life of the signed app identity.
+- **Never write to the `Claude Code-credentials` keychain item.** Writing it (`SecItemUpdate`) makes macOS replace the item's *partition list* with the writing app's partition ID (`teamid:8L59Y7G4M7`), evicting `apple-tool:`. Claude Code reads that item by shelling out to `/usr/bin/security` (an apple-tool) several times a minute, so every read then pops a keychain-password prompt — securityd logs `ACL partition mismatch: client apple-tool: ACL ("teamid:...")`. "Always Allow" restores `apple-tool:` only until our next write. There is no public API to preserve the partition list, so `CredentialSource.isWritable` keeps all refresh/write-back paths off the keychain: we read it, and let Claude Code do the refreshing. Only `~/.claude/.credentials.json` is writable.
+  Diagnose with: `log show --last 1h --style compact --predicate 'process == "securityd" AND eventMessage CONTAINS "partition mismatch"'`
 - **Runway / Stability**: Providers are implemented but untested. Hidden by default. Enable in Settings at your own risk.
 
 ## Releasing

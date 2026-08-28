@@ -65,6 +65,17 @@ actor ClaudeProvider {
     private enum CredentialSource {
         case keychain
         case file(URL)
+
+        // Writing to the keychain item Claude Code owns is never safe: macOS replaces
+        // the item's partition list with the writing app's own partition ID, which
+        // evicts `apple-tool:` and makes every `/usr/bin/security` read Claude Code
+        // performs pop a keychain password prompt (securityd: "ACL partition mismatch").
+        // "Always Allow" restores the entry only until our next write. So the shared
+        // keychain is read-only for us; only the plaintext credentials file is writable.
+        var isWritable: Bool {
+            if case .file = self { return true }
+            return false
+        }
     }
 
     func fetchUsage() async throws -> Provider {
@@ -94,10 +105,19 @@ actor ClaudeProvider {
         // rotates the refresh token — doing it ourselves invalidates whatever copy
         // the CLI still holds. loadCredentials() has already re-read the store for
         // anything near expiry, so only step in once the token is really dead.
+        //
+        // When the store is read-only (the shared keychain) we cannot refresh at all:
+        // refreshing rotates the refresh token server-side, and without a write-back
+        // the copy Claude Code still holds would be dead. Re-read instead — Claude Code
+        // refreshes on its own and we pick the new token up from the store.
         if Self.isExpired(loaded.credentials.claudeAiOauth) {
-            let spent = loaded.credentials.claudeAiOauth?.refreshToken
-            if let refreshed = await refreshedCredentials(from: loaded.credentials) {
-                loaded = persist(refreshed, into: loaded, replacing: spent)
+            if loaded.source.isWritable {
+                let spent = loaded.credentials.claudeAiOauth?.refreshToken
+                if let refreshed = await refreshedCredentials(from: loaded.credentials) {
+                    loaded = persist(refreshed, into: loaded, replacing: spent)
+                }
+            } else if let reloaded = loadCredentials(forceReload: true) {
+                loaded = reloaded
             }
         }
 
@@ -154,7 +174,10 @@ actor ClaudeProvider {
                     return try await fetchUsage(retriesLeft: retriesLeft - 1)
                 }
             }
-            // Fall back to refreshing the token ourselves, then retry
+            // Fall back to refreshing the token ourselves, then retry — but only for a
+            // store we may write back to. Refreshing rotates the refresh token, so doing
+            // it against the read-only shared keychain would cost Claude Code a `/login`.
+            guard loaded.source.isWritable else { return expiredProvider }
             let spent = loaded.credentials.claudeAiOauth?.refreshToken
             if let refreshed = await refreshedCredentials(from: loaded.credentials) {
                 _ = persist(refreshed, into: loaded, replacing: spent)
@@ -379,21 +402,10 @@ actor ClaudeProvider {
 
         switch loaded.source {
         case .keychain:
-            let query: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: keychainService
-            ]
-            let attributes: [String: Any] = [
-                kSecValueData as String: data
-            ]
-            let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-            if status != errSecSuccess {
-                // Refreshing rotated the refresh token server-side, so the copy still
-                // in the keychain is now dead: Claude Code will ask for /login unless
-                // the retry lands. Say so instead of failing silently.
-                Log.error("Claude: keychain update failed (OSStatus \(status)); will retry, Claude Code may need `/login`")
-                return false
-            }
+            // Unreachable: `isWritable` keeps every refresh path away from the keychain.
+            // Kept as a hard stop so no future path can clobber the item's partition list
+            // and put Claude Code back to a password prompt on every credential read.
+            Log.error("Claude: refusing to write the shared keychain item; keeping tokens in memory only")
             return true
         case .file(let url):
             do {

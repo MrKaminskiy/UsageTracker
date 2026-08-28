@@ -130,6 +130,14 @@ class AppState: ObservableObject {
 
     init() {
         loadConfig()
+        // Show the last known reading immediately. The first refresh is a network round-trip
+        // away at best, and the Claude usage endpoint rate-limits hard enough that it can be
+        // minutes — an empty popover for that whole stretch reads as "broken", not "loading".
+        if let cached = UsageCache.load() {
+            providers = cached.providers
+            lastUpdated = cached.savedAt
+            Log.info("Restored \(cached.providers.count) providers from cache (saved \(cached.savedAt))")
+        }
         setupRefreshTimer()
         // Install the notification delegate + request permission at launch (not lazily on the
         // first crossing), so foreground alerts show and the grant resolves before any post.
@@ -174,8 +182,10 @@ class AppState: ObservableObject {
             ("Runway", "runway", runway), ("OpenAI", "openai", openAI), ("OpenRouter", "openrouter", openRouter)
         ]
 
+        let refreshedAt = Date()
         for (name, _, provider) in results {
-            if let provider = provider {
+            if var provider = provider {
+                provider.fetchedAt = refreshedAt
                 newProviders.append(provider)
                 switch provider.status {
                 case .loaded:
@@ -193,13 +203,13 @@ class AppState: ObservableObject {
             }
         }
 
-        // Preserve last-known data for providers that failed to fetch
-        for existingProvider in providers {
-            if !newProviders.contains(where: { $0.id == existingProvider.id }) {
-                // Keep previous data intact for transient failures (rate limits, server errors)
-                newProviders.append(existingProvider)
-            }
-        }
+        // Preserve last-known data for providers that failed to fetch, minus anything that has
+        // aged out of being worth showing.
+        newProviders.append(contentsOf: Self.carriedForward(
+            providers,
+            excluding: Set(newProviders.map(\.id)),
+            now: refreshedAt
+        ))
 
         // Distinguish "rate-limited / unreachable" from "not signed in": a provider that threw
         // (nil result) with no data to fall back on is a transient failure, whereas a
@@ -221,7 +231,21 @@ class AppState: ObservableObject {
 
         providers = newProviders
         Log.info("Refresh complete — \(newProviders.count) providers loaded")
-        lastUpdated = Date()
+        // The footer sits under the usage rows, so it has to mean "these numbers are current".
+        // A provider answering `.notConnected` or `.error` is a fresh answer but not a fresh
+        // reading; stamping on those would print "Updated now" over rows that are hours old.
+        let freshIDs = Set(results.compactMap { $0.provider != nil ? $0.id : nil })
+        let gotUsage = results.contains { result in
+            guard let provider = result.provider, case .loaded = provider.status else { return false }
+            return !provider.items.isEmpty
+        }
+        if gotUsage {
+            lastUpdated = refreshedAt
+        }
+        // Persisted after the cost-estimate strip above, so a snapshot never carries a figure
+        // the user has chosen not to see. Only providers that actually answered this cycle are
+        // rewritten; the rest keep the reading — and the age — they already had on disk.
+        UsageCache.save(newProviders, freshlyFetched: freshIDs)
         await contextAlert
         await updateChecker.check()
     }
@@ -367,6 +391,46 @@ class AppState: ObservableObject {
         saveConfig()
     }
 
+    /// Last-known providers worth carrying into this refresh's results.
+    ///
+    /// A provider that failed keeps showing its previous reading rather than blanking, but not
+    /// indefinitely: once it passes `UsageCache.maxAge` it is retired, and any item whose reset
+    /// window has since elapsed is dropped instead of being left on screen as fact. Surviving
+    /// countdowns are recomputed so a carried-forward row doesn't freeze at the time it was
+    /// fetched. A reading with no `fetchedAt` predates that field and is kept as before.
+    static func carriedForward(_ existing: [Provider],
+                               excluding fresh: Set<String>,
+                               now: Date = Date()) -> [Provider] {
+        existing.compactMap { provider in
+            guard !fresh.contains(provider.id) else { return nil }
+            if let fetchedAt = provider.fetchedAt,
+               now.timeIntervalSince(fetchedAt) > UsageCache.maxAge { return nil }
+
+            // Same calendar-day rule the disk restore applies: a figure scoped to a period it
+            // can't express as a deadline ("$1.20 today") must not outlive that period just
+            // because the app happened to stay open across midnight.
+            let sameDay = provider.fetchedAt.map { Calendar.current.isDate($0, inSameDayAs: now) } ?? true
+
+            var carried = provider
+            carried.items = provider.items.compactMap { item in
+                if let resetsAt = item.resetsAt, resetsAt <= now { return nil }
+                guard item.resetsAt != nil else { return sameDay ? item : nil }
+                return UsageItem(
+                    label: item.label,
+                    current: item.current,
+                    limit: item.limit,
+                    resetLabel: relativeResetLabel(item.resetsAt, now: now),
+                    resetsAt: item.resetsAt,
+                    pinKey: item.pinKey,
+                    kind: item.kind
+                )
+            }
+            // Everything it had to say has expired; an empty row is worse than no row.
+            guard !carried.items.isEmpty else { return nil }
+            return carried
+        }
+    }
+
     /// Count of enabled providers that failed transiently this refresh (threw — e.g. rate-limit
     /// or network error) and have no cached data to fall back on. A `.notConnected` status is a
     /// non-throwing result and is NOT counted, so genuine "signed out" stays distinct.
@@ -419,6 +483,10 @@ class AppState: ObservableObject {
         Log.info("Clearing cache...")
         // Clear URL cache
         URLCache.shared.removeAllCachedResponses()
+
+        // Drop the persisted usage snapshot too, so "Clear Cache" really does leave the app
+        // with nothing to show until the next refresh.
+        UsageCache.clear()
 
         // Clear any stored cookies for API endpoints
         if let cookies = HTTPCookieStorage.shared.cookies {

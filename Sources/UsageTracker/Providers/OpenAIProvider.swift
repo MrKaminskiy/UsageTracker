@@ -134,6 +134,11 @@ actor OpenAIProvider {
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            // Rate limits and server errors are transient: throw so the caller keeps the
+            // last-known reading instead of replacing it with an empty error row.
+            if isTransientHTTPStatus(httpResponse.statusCode) {
+                throw URLError(.init(rawValue: httpResponse.statusCode))
+            }
             return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error(httpErrorMessage(httpResponse.statusCode)))
         }
 
@@ -185,6 +190,11 @@ actor OpenAIProvider {
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            // Rate limits and server errors are transient: throw so the caller keeps the
+            // last-known reading instead of replacing it with an empty error row.
+            if isTransientHTTPStatus(httpResponse.statusCode) {
+                throw URLError(.init(rawValue: httpResponse.statusCode))
+            }
             return Provider(id: "openai", name: "OpenAI API", icon: "sparkles", items: [], status: .error(httpErrorMessage(httpResponse.statusCode)))
         }
 

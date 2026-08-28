@@ -189,7 +189,7 @@ actor ClaudeProvider {
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
             // Throw on transient errors (rate limit, server errors) so the caller can
             // preserve the last-known data instead of replacing it with an error state.
-            if httpResponse.statusCode == 429 || httpResponse.statusCode >= 500 {
+            if isTransientHTTPStatus(httpResponse.statusCode) {
                 throw URLError(.init(rawValue: httpResponse.statusCode))
             }
             return Provider(
@@ -534,18 +534,4 @@ actor ClaudeProvider {
         return formatter.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString)
     }
 
-    private func relativeResetLabel(_ date: Date?) -> String? {
-        guard let date = date else { return nil }
-        let diff = date.timeIntervalSinceNow
-        if diff <= 0 { return nil }
-        let hours = Int(diff / 3600)
-        let minutes = Int((diff.truncatingRemainder(dividingBy: 3600)) / 60)
-        if hours > 24 {
-            return "\(hours / 24)d"
-        } else if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
 }

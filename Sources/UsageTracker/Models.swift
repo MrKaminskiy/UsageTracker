@@ -49,6 +49,34 @@ enum ProviderStatus: Equatable {
     case error(String)
 }
 
+/// Renders a reset deadline as the short countdown shown at the end of a usage row
+/// ("45m", "4h 47m", "6d"). Returns nil once the deadline has passed, so a window that has
+/// already reset shows no countdown at all rather than a negative one.
+func relativeResetLabel(_ date: Date?, now: Date = Date()) -> String? {
+    guard let date = date else { return nil }
+    let diff = date.timeIntervalSince(now)
+    if diff <= 0 { return nil }
+    let hours = Int(diff / 3600)
+    let minutes = Int((diff.truncatingRemainder(dividingBy: 3600)) / 60)
+    if hours > 24 {
+        return "\(hours / 24)d"
+    } else if hours > 0 {
+        return "\(hours)h \(minutes)m"
+    } else {
+        return "\(minutes)m"
+    }
+}
+
+/// Whether an HTTP status means "try again later" rather than "this is broken".
+///
+/// A provider that hits one of these should throw, not return `.error`: `refresh()` keeps the
+/// last-known reading for a provider that threw, and replaces it for one that returned a
+/// status. Reporting a rate limit as `.error` would blank a perfectly good reading — including
+/// the one just restored from `UsageCache` at launch — one refresh after the app opens.
+func isTransientHTTPStatus(_ statusCode: Int) -> Bool {
+    statusCode == 429 || statusCode >= 500
+}
+
 /// Maps HTTP status codes to user-friendly error messages.
 func httpErrorMessage(_ statusCode: Int) -> String {
     switch statusCode {
@@ -71,6 +99,10 @@ struct Provider: Identifiable, Equatable {
     var costEstimate: Double? = nil          // API cost estimate in dollars
     var planLabel: String? = nil             // e.g. "Max" from subscriptionType (Claude only)
     var insights: ClaudeInsights? = nil      // local transcript insights (Claude only)
+    /// When this reading came back from its source. Carried on providers restored from
+    /// `UsageCache` and stamped on every fresh fetch, so a reading kept across failed
+    /// refreshes can still be retired once it is too old to stand behind.
+    var fetchedAt: Date? = nil
     var codexInsights: CodexInsights? = nil  // local CLI activity and account details (Codex only)
 
     var maxPercentage: Double {

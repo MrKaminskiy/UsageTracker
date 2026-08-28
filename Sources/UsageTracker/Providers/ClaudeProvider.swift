@@ -127,13 +127,13 @@ actor ClaudeProvider {
         }
 
         guard let oauth = loaded.credentials.claudeAiOauth else {
-            return Provider(
+            return await webFallback(or: Provider(
                 id: "claude",
                 name: "Claude",
                 icon: "brain",
                 items: [],
                 status: .error("Invalid credentials")
-            )
+            ))
         }
 
         // Fetch usage
@@ -149,13 +149,13 @@ actor ClaudeProvider {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            return Provider(
+            return await webFallback(or: Provider(
                 id: "claude",
                 name: "Claude",
                 icon: "brain",
                 items: [],
                 status: .error("Invalid response")
-            )
+            ))
         }
 
         if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
@@ -197,13 +197,13 @@ actor ClaudeProvider {
             if isTransientHTTPStatus(httpResponse.statusCode) {
                 throw URLError(.init(rawValue: httpResponse.statusCode))
             }
-            return Provider(
+            return await webFallback(or: Provider(
                 id: "claude",
                 name: "Claude",
                 icon: "brain",
                 items: [],
                 status: .error(httpErrorMessage(httpResponse.statusCode))
-            )
+            ))
         }
 
         let usage = try JSONDecoder().decode(UsageResponse.self, from: data)
@@ -227,6 +227,14 @@ actor ClaudeProvider {
             planLabel: Self.planLabel(from: oauth.subscriptionType),
             insights: insights
         )
+    }
+
+    /// Falls back to the browser cookie when the CLI credentials are present but unusable
+    /// (stale, malformed, or rejected). Only a web result with actual rows wins — otherwise
+    /// the original CLI error is the more accurate thing to show the user.
+    private func webFallback(or failure: Provider) async -> Provider {
+        guard let web = try? await webProvider.fetchUsage(), !web.items.isEmpty else { return failure }
+        return web
     }
 
     private func loadCredentials(forceReload: Bool = false) -> LoadedCredentials? {

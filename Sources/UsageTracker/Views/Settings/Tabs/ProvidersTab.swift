@@ -31,7 +31,7 @@ struct ProvidersTab: View {
                     linkTitle: "Open claude.ai",
                     linkURL: URL(string: "https://claude.ai"),
                     key: $claudeCookie, saved: $claudeCookieSaved,
-                    onSave: { saveKey("claude-web", claudeCookie) },
+                    onSave: { saveClaudeCookie() },
                     validateKey: validateClaudeCookie
                 )
             ),
@@ -165,6 +165,14 @@ struct ProvidersTab: View {
         openRouterSaved = !openRouterKey.isEmpty
     }
 
+    /// Stores only the `sessionKey` value, never the whole pasted `Cookie:` header — a header
+    /// carries unrelated cookies that have no business being written to disk.
+    private func saveClaudeCookie() {
+        let canonical = ClaudeWebProvider.extractSessionKey(from: claudeCookie) ?? claudeCookie
+        claudeCookie = canonical
+        saveKey("claude-web", canonical)
+    }
+
     private func loadKey(_ name: String) -> String? {
         let path = configDir.appendingPathComponent("\(name).json")
         guard let data = try? Data(contentsOf: path),
@@ -182,6 +190,12 @@ struct ProvidersTab: View {
 
         if let data = try? JSONEncoder().encode(config) {
             try? data.write(to: path)
+            // These files hold live credentials — a claude.ai session cookie grants full
+            // account access — and the default umask leaves them 0644, readable by every
+            // local user. Restrict them to their owner.
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: path.path
+            )
 
             switch name {
             case "claude-web": claudeCookieSaved = true

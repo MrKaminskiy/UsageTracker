@@ -37,7 +37,7 @@ struct OnboardingView: View {
                         title: "Works Automatically",
                         subtitle: "These services are detected from your local config",
                         providers: [
-                            ProviderInfo(icon: "brain", name: "Claude", description: "Sign in to Claude Code CLI"),
+                            ProviderInfo(icon: "brain", name: "Claude", description: "Claude Code login, or a claude.ai cookie"),
                             ProviderInfo(icon: "cursorarrow.rays", name: "Cursor", description: "Sign in to Cursor app"),
                             ProviderInfo(icon: "terminal.fill", name: "Codex", description: "Run 'codex login' in terminal")
                         ]

@@ -22,7 +22,9 @@ Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, Eleve
 
 Builds on the Releases page are signed with a Developer ID and notarized by Apple, so Gatekeeper lets them open without extra steps. If you build from source yourself, macOS will quarantine the unsigned bundle — clear it once with `xattr -cr /Applications/UsageTracker.app`.
 
-**Requirements:** macOS 14+, [Claude Code](https://claude.ai/code) installed and logged in
+**Requirements:** macOS 14+. No CLI required — Claude usage works either from a
+[Claude Code](https://claude.ai/code) login or, if you only use Claude on the web, from your
+claude.ai browser session (Settings → Providers → Claude).
 
 ## What it shows
 
@@ -30,12 +32,25 @@ UsageTracker reads your usage data locally — no accounts, no telemetry.
 
 | Provider | What's shown | How to connect |
 |----------|-------------|----------------|
-| **Claude** | Session %, Weekly %, Sonnet %, Opus %, extra credits, cost estimate, usage insights | Auto-detected (uses Claude Code login) |
+| **Claude** | Session %, Weekly %, Sonnet %, Opus %, extra credits, cost estimate, usage insights | Auto-detected via Claude Code login, or paste your claude.ai `sessionKey` cookie in Settings |
 | **Cursor** | Usage % | Auto-detected |
 | **Codex** | Usage % | Auto-detected via `~/.codex/auth.json` |
 | **OpenAI** | Monthly spend (admin key) or daily requests + tokens (project key) | Add key in Settings |
 | **ElevenLabs** | Character quota % | Add key in Settings |
 | **OpenRouter** | Credit balance or monthly spend | Add key in Settings |
+
+### Using Claude without the CLI
+
+If you use Claude only in the browser or desktop app, there is no CLI login for UsageTracker to
+read. Paste your claude.ai session cookie instead:
+
+1. Open [claude.ai](https://claude.ai) while signed in
+2. DevTools → Application → Cookies → `claude.ai` → copy the `sessionKey` value
+3. Settings → Providers → Claude → paste it
+
+Limit bars, extra credits and reset times all work this way. Cost estimates and usage insights do
+not — those are read from local Claude Code transcripts, which a web-only account does not have.
+The cookie expires when your browser session does, and the app will say so when it needs a new one.
 
 ## Usage
 

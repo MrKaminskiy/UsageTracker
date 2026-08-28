@@ -163,6 +163,11 @@ struct ProviderDisclosureRow: View {
     }
 
     private var emptyLimitsMessage: String {
+        // Claude has a key field, but the cookie is the fallback for web-only users —
+        // most people connect it by signing in to Claude Code and need no key at all.
+        if provider.id == "claude" {
+            return "Sign in to Claude Code, or paste your claude.ai cookie below."
+        }
         if provider.keyConfig != nil {
             return "Add an API key to start tracking."
         }

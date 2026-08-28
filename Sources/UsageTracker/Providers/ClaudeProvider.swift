@@ -10,6 +10,8 @@ actor ClaudeProvider {
     static let refreshBufferMs: Double = 5 * 60 * 1000 // 5 minutes
     static let expiryGraceMs: Double = 30 * 1000 // 30 seconds
     private let insightsAnalyzer = ClaudeInsightsAnalyzer()
+    // Fallback for people who never installed the CLI and so have no OAuth token to read.
+    private let webProvider = ClaudeWebProvider()
 
     // Credentials cached in memory so the keychain (which can prompt the user
     // for access after Claude Code's /login recreates the item) is only read
@@ -92,6 +94,9 @@ actor ClaudeProvider {
         }
 
         guard var loaded = loadCredentials() else {
+            // No CLI credentials at all — the case of someone who only uses claude.ai in a
+            // browser. Try the pasted session cookie before declaring Claude unavailable.
+            if let web = try await webProvider.fetchUsage() { return web }
             return Provider(
                 id: "claude",
                 name: "Claude",
@@ -202,55 +207,7 @@ actor ClaudeProvider {
         }
 
         let usage = try JSONDecoder().decode(UsageResponse.self, from: data)
-        var items: [UsageItem] = []
-
-        if let fiveHour = usage.five_hour, let utilization = fiveHour.utilization {
-            let resetDate = parseResetDate(fiveHour.resets_at)
-            items.append(UsageItem(
-                label: "Session",
-                current: utilization,
-                limit: 100,
-                resetLabel: relativeResetLabel(resetDate),
-                resetsAt: resetDate
-            ))
-        }
-
-        if let sevenDay = usage.seven_day, let utilization = sevenDay.utilization {
-            let resetDate = parseResetDate(sevenDay.resets_at)
-            items.append(UsageItem(
-                label: "Weekly",
-                current: utilization,
-                limit: 100,
-                resetLabel: relativeResetLabel(resetDate),
-                resetsAt: resetDate
-            ))
-        }
-
-        if let sonnet = usage.seven_day_sonnet, let utilization = sonnet.utilization {
-            let resetDate = parseResetDate(sonnet.resets_at)
-            items.append(UsageItem(
-                label: "Sonnet",
-                current: utilization,
-                limit: 100,
-                resetLabel: relativeResetLabel(resetDate),
-                resetsAt: resetDate
-            ))
-        }
-
-        if let opus = usage.seven_day_opus, let utilization = opus.utilization {
-            let resetDate = parseResetDate(opus.resets_at)
-            items.append(UsageItem(
-                label: "Opus",
-                current: utilization,
-                limit: 100,
-                resetLabel: relativeResetLabel(resetDate),
-                resetsAt: resetDate
-            ))
-        }
-
-        if let extraItem = Self.extraCreditsItem(from: usage.extra_usage) {
-            items.append(extraItem)
-        }
+        let items = Self.usageItems(from: usage)
 
         // 2x detection
         let detector = Claude2xDetector.loadFromDisk()
@@ -486,6 +443,62 @@ actor ClaudeProvider {
         return refreshResponse.access_token
     }
 
+    /// Builds the usage rows shown for Claude. Shared by both auth paths: the OAuth
+    /// token endpoint and the cookie-authed claude.ai web API return the same JSON
+    /// shape, so the two must never drift into showing different rows.
+    static func usageItems(from usage: UsageResponse) -> [UsageItem] {
+        var items: [UsageItem] = []
+
+        if let fiveHour = usage.five_hour, let utilization = fiveHour.utilization {
+            let resetDate = Self.parseResetDate(fiveHour.resets_at)
+            items.append(UsageItem(
+                label: "Session",
+                current: utilization,
+                limit: 100,
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
+            ))
+        }
+
+        if let sevenDay = usage.seven_day, let utilization = sevenDay.utilization {
+            let resetDate = Self.parseResetDate(sevenDay.resets_at)
+            items.append(UsageItem(
+                label: "Weekly",
+                current: utilization,
+                limit: 100,
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
+            ))
+        }
+
+        if let sonnet = usage.seven_day_sonnet, let utilization = sonnet.utilization {
+            let resetDate = Self.parseResetDate(sonnet.resets_at)
+            items.append(UsageItem(
+                label: "Sonnet",
+                current: utilization,
+                limit: 100,
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
+            ))
+        }
+
+        if let opus = usage.seven_day_opus, let utilization = opus.utilization {
+            let resetDate = Self.parseResetDate(opus.resets_at)
+            items.append(UsageItem(
+                label: "Opus",
+                current: utilization,
+                limit: 100,
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
+            ))
+        }
+
+        if let extraItem = Self.extraCreditsItem(from: usage.extra_usage) {
+            items.append(extraItem)
+        }
+        return items
+    }
+
     static func extraCreditsItem(from extra: UsageResponse.ExtraUsage?) -> UsageItem? {
         guard let extra, extra.is_enabled == true,
               let limitMinor = extra.monthly_limit, limitMinor > 0 else { return nil }
@@ -527,7 +540,7 @@ actor ClaudeProvider {
         }
     }
 
-    private func parseResetDate(_ isoString: String?) -> Date? {
+    static func parseResetDate(_ isoString: String?) -> Date? {
         guard let isoString = isoString else { return nil }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

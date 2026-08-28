@@ -130,6 +130,7 @@ class AppState: ObservableObject {
 
     init() {
         loadConfig()
+        secureConfigFiles()
         // Show the last known reading immediately. The first refresh is a network round-trip
         // away at best, and the Claude usage endpoint rate-limits hard enough that it can be
         // minutes — an empty popover for that whole stretch reads as "broken", not "loading".
@@ -323,6 +324,39 @@ class AppState: ObservableObject {
         let configURL = configDir.appendingPathComponent("config.json")
         if let data = try? JSONEncoder().encode(config) {
             try? data.write(to: configURL)
+        }
+    }
+
+
+    /// Tightens permissions on the credential files in `~/.usagetracker`.
+    ///
+    /// These hold live credentials — an API key, or a claude.ai session cookie that grants
+    /// full account access — and builds before 1.4.0 wrote them under the default umask,
+    /// leaving them 0644 and readable by every local user. Saving a key now writes 0600, but
+    /// an upgraded install keeps whatever is already on disk until it is rewritten, so fix
+    /// them at launch. Also drops any full `Cookie:` header down to just its sessionKey.
+    private func secureConfigFiles() {
+        let fm = FileManager.default
+        let dir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".usagetracker")
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+
+        for file in files where file.pathExtension == "json" {
+            if file.lastPathComponent == "claude-web.json",
+               let data = try? Data(contentsOf: file),
+               var stored = try? JSONDecoder().decode([String: String].self, from: data),
+               let raw = stored["cookie"] ?? stored["api_key"],
+               let canonical = ClaudeWebProvider.extractSessionKey(from: raw),
+               canonical != raw {
+                stored[stored["cookie"] != nil ? "cookie" : "api_key"] = canonical
+                if let rewritten = try? JSONEncoder().encode(stored) {
+                    try? rewritten.write(to: file)
+                }
+            }
+
+            let mode = (try? fm.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)??.intValue
+            if mode != 0o600 {
+                try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            }
         }
     }
 

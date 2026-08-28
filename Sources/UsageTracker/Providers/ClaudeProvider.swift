@@ -166,7 +166,7 @@ actor ClaudeProvider {
                 items: [],
                 status: .error("Token expired. Run `claude` to log in again.")
             )
-            guard retriesLeft > 0 else { return expiredProvider }
+            guard retriesLeft > 0 else { return await webFallback(or: expiredProvider) }
 
             // The token may have been rotated behind our back (e.g. /login in
             // Claude Code recreates the keychain item) — re-read the store and
@@ -182,13 +182,13 @@ actor ClaudeProvider {
             // Fall back to refreshing the token ourselves, then retry — but only for a
             // store we may write back to. Refreshing rotates the refresh token, so doing
             // it against the read-only shared keychain would cost Claude Code a `/login`.
-            guard loaded.source.isWritable else { return expiredProvider }
+            guard loaded.source.isWritable else { return await webFallback(or: expiredProvider) }
             let spent = loaded.credentials.claudeAiOauth?.refreshToken
             if let refreshed = await refreshedCredentials(from: loaded.credentials) {
                 _ = persist(refreshed, into: loaded, replacing: spent)
                 return try await fetchUsage(retriesLeft: retriesLeft - 1)
             }
-            return expiredProvider
+            return await webFallback(or: expiredProvider)
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {

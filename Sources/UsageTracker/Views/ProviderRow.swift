@@ -81,6 +81,9 @@ struct ProviderRow: View {
             RoundedRectangle(cornerRadius: UsageDesign.containerRadius)
                 .fill(UsageDesign.containerFill)
         )
+        // Clips the rows fading out on collapse to the shrinking card, so the card
+        // below doesn't slide over them.
+        .clipShape(RoundedRectangle(cornerRadius: UsageDesign.containerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: UsageDesign.containerRadius)
                 .stroke(SettingsDesign.hairlineColor, lineWidth: SettingsDesign.hairlineWidth)

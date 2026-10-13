@@ -26,6 +26,55 @@ extension ButtonStyle where Self == IconButtonStyle {
     static var icon: IconButtonStyle { IconButtonStyle() }
 }
 
+/// Moves the popover's bottom edge together with the content.
+///
+/// The popover sizes itself to this view. Sized straight from the content, it snapped to the
+/// new size while a card was still animating: the in-between layout got centered (cards
+/// lurched) and the footer trailed the popover edge. Here the content keeps its own height,
+/// pinned to the top, and the popover follows it through a frame animated on the cards' curve.
+struct PopoverHeight: ViewModifier {
+    @State private var height: CGFloat?
+
+    func body(content: Content) -> some View {
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
+            })
+            .modifier(AnimatedFrameHeight(height: height))
+            // The popover rounds to whole points; without this the hosting view centers the
+            // fractional animated height in it and the content shimmers by up to half a point.
+            .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+            .onPreferenceChange(ContentHeightKey.self) { newHeight in
+                guard height != nil else {
+                    height = newHeight
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.2)) { height = newHeight }
+            }
+    }
+}
+
+private struct AnimatedFrameHeight: ViewModifier, Animatable {
+    var height: CGFloat?
+
+    nonisolated var animatableData: CGFloat {
+        get { height ?? 0 }
+        set { height = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.frame(height: height, alignment: .top)
+    }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
 
@@ -38,7 +87,8 @@ struct MenuBarView: View {
     @State private var screen: Screen = .list
 
     var body: some View {
-        Group {
+        // One container, so PopoverHeight keeps a single height across screen switches.
+        ZStack(alignment: .top) {
             switch screen {
             case .list:
                 listScreen
@@ -56,6 +106,7 @@ struct MenuBarView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: screen)
+        .modifier(PopoverHeight())
         .onAppear { screen = .list }
         .task {
             await appState.refresh()

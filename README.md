@@ -1,91 +1,156 @@
+<div align="center">
+
+<img src="docs/images/icon.png" width="128" height="128" alt="UsageTracker app icon">
+
 # UsageTracker
 
-Track your AI service usage at a glance — Claude, Cursor, Codex, OpenAI, ElevenLabs, OpenRouter and more, right in your macOS menu bar.
+**All your AI usage limits in the macOS menu bar.**<br>
+See how much of each limit you've used, and when it resets, before you run out mid-task.
 
-### Popover — click the menu bar icon to see all your providers at a glance
+Claude · Codex · Cursor · OpenAI · ElevenLabs · OpenRouter
 
-<img src="demo.gif" width="600">
+[![Latest release](https://img.shields.io/github/v/release/MrKaminskiy/UsageTracker?label=download&color=E8743B)](https://github.com/MrKaminskiy/UsageTracker/releases/latest)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-555?logo=apple&logoColor=white)](#install)
+[![MIT License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
-| Popover | Settings |
-|---------|----------|
-| ![Popover](screenshot-popover.png) | ![Settings](screenshot-popover-settings.png) |
+<br>
 
-### Settings — toggle providers, add API keys, drag to reorder
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/popover-dark.png">
+  <img src="docs/images/popover-light.png" width="582" alt="The UsageTracker popover open under its menu bar ring, showing usage bars for Claude, Codex, Cursor and ElevenLabs">
+</picture>
 
-<img src="settings-demo.gif" width="500">
+</div>
+
+## Why
+
+AI tools cut you off at limits you can't see: a five-hour session cap, a weekly cap, a cap per model, a monthly plan. You usually find out when a request fails.
+
+UsageTracker puts one ring in your menu bar that fills as you use a limit. Click it to see every limit across your tools, with a countdown to each reset.
+
+## Features
+
+- **One ring for everything.** The menu bar shows your highest limit, or the one you pin. It turns orange at 60% and red at 85%.
+- **Every limit, with its reset time.** Session, weekly, per-model caps (like Fable), extra credits, and plan quotas.
+- **Pin what matters.** Click any limit in the popover to show it in the menu bar.
+- **Claude and Codex detail pages.** See your plan, exact reset times, today's activity, and for Claude, usage by product this week.
+- **Why you're burning through limits.** Claude insights flag usage at large context sizes, name the chats that caused it, and rank your top skills and subagents.
+- **Large-context alert.** Get a notification when the Claude chat you're in passes 150k tokens of context (you can change the threshold), so you can `/compact` before it eats your session.
+- **No setup for most people.** Claude Code, Codex and Cursor are picked up from the logins you already have. There's no keychain password prompt.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/claude-detail-dark.png">
+        <img src="docs/images/claude-detail-light.png" alt="Claude detail page with limit bars, usage by product, 24-hour insights, top skills and agents, and today's stats">
+      </picture>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/codex-detail-dark.png">
+        <img src="docs/images/codex-detail-light.png" alt="Codex detail page with 5-hour and weekly limits, today's activity, and recent chats">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Claude details</b>: limits, insights and today's numbers</sub></td>
+    <td align="center"><sub><b>Codex details</b>: limits, local activity and recent chats</sub></td>
+  </tr>
+</table>
 
 ## Install
 
-1. Download `UsageTracker.dmg` from [Releases](../../releases)
-2. Open the DMG and drag UsageTracker to Applications
-3. Launch UsageTracker from Applications
+1. Download **`UsageTracker.dmg`** from the [latest release](https://github.com/MrKaminskiy/UsageTracker/releases/latest).
+2. Open it and drag **UsageTracker** into **Applications**.
+3. Launch it. The ring appears in your menu bar, and a welcome screen walks you through the rest.
 
-Builds on the Releases page are signed with a Developer ID and notarized by Apple, so Gatekeeper lets them open without extra steps. If you build from source yourself, macOS will quarantine the unsigned bundle — clear it once with `xattr -cr /Applications/UsageTracker.app`.
+Releases are signed with a Developer ID and notarized by Apple, so Gatekeeper opens them normally. UsageTracker checks GitHub for new versions and shows updates in **Settings → About**.
 
-**Requirements:** macOS 14+. No CLI required — Claude usage works either from a
-[Claude Code](https://claude.ai/code) login or, if you only use Claude on the web, from your
-claude.ai browser session (Settings → Providers → Claude).
+**Requires macOS 14 Sonoma or later.**
 
-## What it shows
+## Supported providers
 
-UsageTracker reads your usage data locally — no accounts, no telemetry.
+| Provider | What you see | How it connects |
+|---|---|---|
+| **Claude** | Session, weekly and per-model limits, extra credits, usage insights, optional API cost estimate | Automatic from your Claude Code login, or [a browser cookie](#using-claude-without-claude-code) |
+| **Codex** | 5-hour and weekly limits, separately metered models, monthly workspace credits, banked limit resets | Automatic from `codex login` |
+| **Cursor** | Plan usage and when it resets | Automatic from the Cursor app |
+| **OpenAI API** | Monthly spend (admin key) or today's requests and tokens (project key) | API key in Settings |
+| **ElevenLabs** | Character quota and reset time | API key in Settings |
+| **OpenRouter** | Credits used, or monthly and daily spend | API key in Settings |
 
-| Provider | What's shown | How to connect |
-|----------|-------------|----------------|
-| **Claude** | Session %, Weekly %, Sonnet %, Opus %, extra credits, cost estimate, usage insights | Auto-detected via Claude Code login, or paste your claude.ai `sessionKey` cookie in Settings |
-| **Cursor** | Usage % | Auto-detected |
-| **Codex** | Usage % | Auto-detected via `~/.codex/auth.json` |
-| **OpenAI** | Monthly spend (admin key) or daily requests + tokens (project key) | Add key in Settings |
-| **ElevenLabs** | Character quota % | Add key in Settings |
-| **OpenRouter** | Credit balance or monthly spend | Add key in Settings |
-
-### Using Claude without the CLI
-
-If you use Claude only in the browser or desktop app, there is no CLI login for UsageTracker to
-read. Paste your claude.ai session cookie instead:
-
-1. Open [claude.ai](https://claude.ai) while signed in
-2. DevTools → Application → Cookies → `claude.ai` → copy the `sessionKey` value
-3. Settings → Providers → Claude → paste it
-
-Limit bars, extra credits and reset times all work this way. Cost estimates and usage insights do
-not — those are read from local Claude Code transcripts, which a web-only account does not have.
-The cookie expires when your browser session does, and the app will say so when it needs a new one.
-
-## Usage
-
-- **Left-click** the menu bar icon — open usage popover
-- **Right-click** the menu bar icon — Settings, Clear Cache, Quit
-- The icon color reflects your highest current usage (green → orange → red)
-- Pin any metric to the menu bar via the dot indicator in the popover
+OpenAI, ElevenLabs and OpenRouter support is newer and less tested than Claude, Codex and Cursor. Runway and Stability AI are built in but untested, so they're off by default. You can turn them on in Settings.
 
 ## Settings
 
-Settings live in `~/.usagetracker/`:
-- `config.json` — refresh interval, provider order, visibility
-- `openai.json`, `elevenlabs.json`, `openrouter.json` — API keys
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-dark.png">
+  <img src="docs/images/settings-light.png" alt="UsageTracker Settings window with a searchable sidebar of app pages and providers, showing the Codex page">
+</picture>
+
+Each provider has its own page with its live limits, an on/off switch, and a key field for providers that need one. Keys are checked as you paste them. Search filters the sidebar to the right page, and you can drag providers in the sidebar to reorder the popover.
+
+### Using Claude without Claude Code
+
+If you only use Claude in the browser or the desktop app, connect it with your claude.ai session instead:
+
+1. Open [claude.ai](https://claude.ai) while signed in.
+2. Open DevTools → **Application** → **Cookies** → `claude.ai`, and copy the `sessionKey` value.
+3. Paste it into **Settings → Claude → Browser Cookie** and click **Save**.
+
+Limits, extra credits and reset times all work this way. Insights and the cost estimate don't, because they come from Claude Code's local session logs. The cookie expires with your browser session, and UsageTracker tells you when it needs a new one.
+
+## Tips
+
+- **Left-click** the ring for the popover. **Right-click** it for Settings, Clear Cache and Quit.
+- **Click a limit** to pin it to the menu bar. Click it again to go back to showing your highest limit.
+- **Click the circled ›** at the right of the Claude or Codex card to open its detail page.
+- **Keep the refresh interval at 5 minutes or more.** Claude rate-limits frequent checks, and a rate-limited Claude card can look like it's signed out.
+- **Turn on the API cost estimate** in **Settings → Display** to see what this month's Claude Code usage would cost at API prices. It's a rough estimate from local logs, not billing data.
+
+## Privacy
+
+UsageTracker has no account, no server and no analytics.
+
+- It uses logins that are already on your Mac: Claude Code's (read-only from the keychain, or from `~/.claude/.credentials.json`, which it updates if it has to refresh an expired token), Codex's `~/.codex/auth.json`, and the Cursor app's local data.
+- It sends requests only to the services you've connected, using your own credentials, and to the GitHub API to check for updates.
+- Insights are worked out on your Mac from Claude Code's session logs and Codex's local database. They're never uploaded.
+- Settings, API keys and the Claude cookie are stored in `~/.usagetracker/`. Key and cookie files are readable only by your user account.
+
+## Troubleshooting
+
+<details>
+<summary><b>Claude is missing, shows no data, or says "Can't reach the service"</b></summary>
+
+Claude's usage endpoint rate-limits frequent requests, and a block can last a while. Set **Settings → General → Refresh Interval** to 5 minutes or more, then wait. UsageTracker keeps showing your last reading and retries on its own.
+</details>
+
+<details>
+<summary><b>How do I remove a saved API key or cookie?</b></summary>
+
+Settings can't remove one yet. Delete its file in `~/.usagetracker/` (`claude-web.json`, `openai.json`, `elevenlabs.json` or `openrouter.json`), or turn the provider off in Settings.
+</details>
+
+<details>
+<summary><b>How accurate is the cost estimate?</b></summary>
+
+It counts the tokens in `~/.claude/projects/` and prices them at public API rates. It only covers Claude Code on this Mac, so it doesn't include claude.ai chats or API usage from other tools.
+</details>
 
 ## Build from source
 
 ```bash
 git clone https://github.com/MrKaminskiy/UsageTracker
 cd UsageTracker
-make run
+make run     # build and launch a debug build
+make test    # run the test suite
 ```
 
-To run tests:
-```bash
-make test
-```
+Requires Xcode 16 or later. `make install` builds a signed release copy into `/Applications`. It needs a Developer ID certificate set in `CODESIGN_IDENTITY`.
 
-## Known limitations
-
-- **Password prompt on first launch**: UsageTracker reads Claude Code's stored login from your macOS Keychain. Click "Always Allow" once and you won't be asked again.
-- **Runway and Stability**: Providers are implemented but not yet verified. They are hidden by default. You can enable them in Settings.
-- **Cost estimate**: Reads `~/.claude/projects/*.jsonl` files. Accurate for Claude Code usage; does not include API usage outside Claude Code.
-- **macOS 14+ required**: The app uses SwiftUI features not available on earlier versions.
+Issues and pull requests are welcome.
 
 ## License
 
-Released under the MIT License. See [LICENSE](LICENSE) for details.
-
+[MIT](LICENSE) © Kaminskiy Nikita

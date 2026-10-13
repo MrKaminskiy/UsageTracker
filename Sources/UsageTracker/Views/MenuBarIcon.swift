@@ -5,11 +5,7 @@ struct MenuBarIcon: View {
     let isLoading: Bool
 
     private var color: Color {
-        switch percentage {
-        case 0..<50: return .green
-        case 50..<80: return .yellow
-        default: return .red
-        }
+        UsageLevel(percentage: percentage).color
     }
 
     var body: some View {

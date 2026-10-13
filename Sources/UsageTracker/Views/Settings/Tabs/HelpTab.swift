@@ -47,9 +47,7 @@ struct HelpTab: View {
     @ViewBuilder
     private func section(title: String, rows: [HelpEntry]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
+            DetailSectionHeader(title: title)
                 .padding(.horizontal, 4)
 
             SettingsCard {

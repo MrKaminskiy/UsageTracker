@@ -27,7 +27,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: rootView)
 
         let newWindow = NSWindow(contentViewController: hostingController)
-        newWindow.title = "Preferences"
+        newWindow.title = "Settings"
         newWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         newWindow.titleVisibility = .hidden
         newWindow.titlebarAppearsTransparent = true

@@ -17,7 +17,7 @@ struct SettingsToolbar: View {
         .frame(maxWidth: .infinity)
         .background(.bar)
         .overlay(alignment: .top) {
-            Text("Preferences")
+            Text("Settings")
                 .font(.system(size: 13, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.top, 7)

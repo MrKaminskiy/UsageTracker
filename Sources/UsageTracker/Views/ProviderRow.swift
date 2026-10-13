@@ -21,81 +21,69 @@ struct ProviderRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             providerHeader
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
 
             if case .notConnected(let url) = provider.status {
-                HStack {
-                    Spacer()
-                    Button("View Usage") {
-                        NSWorkspace.shared.open(url)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    Spacer()
+                Button("View Usage") {
+                    NSWorkspace.shared.open(url)
                 }
-                .padding(.horizontal, 12)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
                 .padding(.bottom, 10)
             } else if provider.isExpanded && !displayedItems.isEmpty {
                 // Find the first item with max percentage (used when nothing is pinned)
                 let maxItemId = displayedItems.max(by: { $0.percentage < $1.percentage })?.id
                 let hasPinnedItem = displayedItems.contains { isPinned($0.stablePinKey) }
 
-                // Inset content area
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     ForEach(displayedItems) { item in
                         let itemIsPinned = isPinned(item.stablePinKey)
-                        // Show green dot if: pinned, OR (no pin anywhere AND this is max in displayed provider)
-                        let showDot = itemIsPinned || (!hasPinnedItem && isDisplayedInBar && item.id == maxItemId)
+                        // Mark the item if: pinned, OR (no pin anywhere AND this is max in displayed provider)
+                        let showMarker = itemIsPinned || (!hasPinnedItem && isDisplayedInBar && item.id == maxItemId)
                         UsageItemRow(
                             item: item,
-                            isDisplayedInBar: showDot,
+                            isDisplayedInBar: showMarker,
                             isPinned: itemIsPinned,
-                            onTap: { onTogglePin?(item.stablePinKey) }
+                            onTap: onTogglePin.map { toggle in { toggle(item.stablePinKey) } }
                         )
                     }
 
                     if let cost = provider.costEstimate {
                         Divider()
                             .padding(.vertical, 4)
+                            .padding(.leading, 24)
+                            .padding(.trailing, 6)
 
                         HStack(spacing: 8) {
-                            Text("Code API cost est.")
+                            Text("Est. API cost this month")
                                 .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
 
                             Spacer()
 
                             Text(Self.formatCost(cost))
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(.secondary)
-
-                            Text("this month")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
-                                .frame(width: 60, alignment: .trailing)
+                                .font(.system(size: 11, weight: .medium))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
                         }
                         .padding(.leading, 24)
+                        .padding(.trailing, 6)
+                        .help("What this month's Claude Code usage would cost at API prices, estimated from local session logs.")
                     }
                 }
-                .padding(.vertical, 8)
                 .padding(.horizontal, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.03))
-                )
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.5))
-                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                )
+            RoundedRectangle(cornerRadius: UsageDesign.containerRadius)
+                .fill(UsageDesign.containerFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: UsageDesign.containerRadius)
+                .stroke(SettingsDesign.hairlineColor, lineWidth: SettingsDesign.hairlineWidth)
         )
         .onHover { hovering in
             isCardHovered = hovering
@@ -103,51 +91,51 @@ struct ProviderRow: View {
     }
 
     private var providerHeader: some View {
-        HStack {
+        HStack(spacing: 6) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     provider.isExpanded.toggle()
                 }
             } label: {
-                HStack {
-                    Image(systemName: provider.isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(provider.isExpanded ? 90 : 0))
                         .frame(width: 12)
 
                     Image(systemName: provider.icon)
                         .font(.system(size: 12))
-                        .foregroundColor(provider.displayColor)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
 
                     Text(provider.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13, weight: .semibold))
+                        .fixedSize()
 
                     if provider.insights?.hasWarnings == true {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(.orange)
-                            .help("Usage insights available — open Claude details")
+                            .font(.system(size: 10))
+                            .foregroundStyle(UsageLevel.warning.color)
+                            .help("Usage insights available. Open Claude details.")
                     }
 
                     if let boost = provider.boostStatus {
-                        HStack(spacing: 2) {
+                        HStack(spacing: 3) {
                             Text("2x")
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .font(.system(size: 10, weight: .bold))
                             if let label = boost.nextTransitionLabel {
                                 Text(label)
-                                    .font(.system(size: 8, weight: .medium))
+                                    .font(.system(size: 10))
                             }
                         }
-                        .foregroundColor(boost.isActive
-                            ? Color(red: 0.204, green: 0.780, blue: 0.349)  // match app green
-                            : .secondary)
-                        .padding(.horizontal, 4)
+                        .foregroundStyle(boost.isActive ? AnyShapeStyle(UsageLevel.normal.color) : AnyShapeStyle(.secondary))
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 1)
                         .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(boost.isActive
-                                    ? Color(red: 0.204, green: 0.780, blue: 0.349).opacity(0.12)
-                                    : Color.primary.opacity(0.04))
+                            Capsule().fill(boost.isActive
+                                ? UsageLevel.normal.color.opacity(0.14)
+                                : UsageDesign.barTrack)
                         )
                     }
 
@@ -157,32 +145,33 @@ struct ProviderRow: View {
             }
             .buttonStyle(.plain)
 
+            switch provider.status {
+            case .loading:
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+            case .notConnected:
+                Text("Not connected")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            case .error(let message):
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(UsageLevel.warning.color)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(message)
+            case .loaded:
+                UsagePercentText(percentage: displayedMaxPercentage, size: 12)
+            }
+
             if let onOpenDetail {
                 Button(action: onOpenDetail) {
                     Image(systemName: "chevron.right.circle")
                 }
                 .buttonStyle(.icon)
                 .help("Usage details")
-                .opacity(isCardHovered ? 1 : 0)
-            }
-
-            switch provider.status {
-            case .loading:
-                ProgressView()
-                    .scaleEffect(0.6)
-            case .notConnected:
-                Text("Not connected")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            case .error(let message):
-                Text(message)
-                    .font(.system(size: 10))
-                    .foregroundColor(.orange)
-            case .loaded:
-                Text("\(Int(displayedMaxPercentage))%")
-                    .font(.system(size: 11))
-                    .monospacedDigit()
-                    .foregroundColor(.secondary)
+                .opacity(isCardHovered ? 1 : 0.55)
             }
         }
     }
@@ -202,83 +191,64 @@ struct UsageItemRow: View {
     var isDisplayedInBar: Bool = false
     var isPinned: Bool = false
     var onTap: (() -> Void)? = nil
+    /// Settings lists rows without menu bar markers, so it drops the marker column.
+    var reservesMarkerSpace: Bool = true
 
     @State private var isHovered = false
 
+    private var markerHelp: String {
+        if isPinned { return "Pinned to the menu bar. Click to unpin." }
+        if isDisplayedInBar { return "Shown in the menu bar. Click to pin." }
+        return "Click to pin to the menu bar"
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 0) {
-                ZStack {
-                    Circle()
-                        .fill(isDisplayedInBar ? Color.green : Color.clear)
-                        .frame(width: 5, height: 5)
-                    if isPinned {
-                        Circle()
-                            .stroke(Color.green, lineWidth: 1)
-                            .frame(width: 8, height: 8)
+            HStack(spacing: 8) {
+                if reservesMarkerSpace {
+                    // ZStack, not Group: an empty Group drops its frame and the label column shifts.
+                    ZStack {
+                        if isPinned {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 7, weight: .semibold))
+                                .rotationEffect(.degrees(45))
+                        } else if isDisplayedInBar {
+                            Circle().frame(width: 5, height: 5)
+                        }
                     }
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 10, height: 10)
                 }
-                .frame(width: 8, height: 8)
-                .padding(.trailing, 4)
 
+                // Wraps rather than truncates: metered limits have long names
+                // ("GPT-5.3-Codex-Spark Weekly") whose tail is the distinguishing part.
                 Text(item.label)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: 92, alignment: .leading)
+            .frame(width: reservesMarkerSpace ? 100 : 82, alignment: .leading)
 
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    // Track with inset shadow effect
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.primary.opacity(0.06))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.primary.opacity(0.04), lineWidth: 0.5)
-                        )
+            UsageBar(percentage: item.percentage)
 
-                    // Filled portion with gradient
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [item.gradientColors.start, item.gradientColors.end],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geometry.size.width * min(item.percentage / 100, 1))
-                        .overlay(
-                            // Subtle top highlight
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.white.opacity(0.25), Color.white.opacity(0)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .frame(width: geometry.size.width * min(item.percentage / 100, 1))
-                        )
-                }
-            }
-            .frame(height: 8)
+            UsagePercentText(percentage: item.percentage)
+                .frame(width: 34, alignment: .trailing)
 
-            Text("\(Int(item.percentage))%")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(item.percentage >= 85 ? item.color : .secondary)
-                .frame(width: 32, alignment: .trailing)
-
-            Text(item.resetLabel ?? "")
-                .font(.system(size: 9))
+            // Zero-width space after "/" so "12345.60/50000" wraps at the slash, not mid-number.
+            Text(item.resetLabel?.replacingOccurrences(of: "/", with: "/\u{200B}") ?? "")
+                .font(.system(size: 10))
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
-                .frame(width: 60, alignment: .trailing)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 58, alignment: .trailing)
         }
-        .padding(.leading, 24)
-        .padding(.vertical, 2)
+        .padding(.leading, reservesMarkerSpace ? 6 : 0)
+        .padding(.trailing, reservesMarkerSpace ? 6 : 0)
+        .padding(.vertical, 3)
         .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            RoundedRectangle(cornerRadius: UsageDesign.rowRadius)
+                .fill(isHovered && onTap != nil ? Color.primary.opacity(0.06) : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -287,6 +257,7 @@ struct UsageItemRow: View {
         .onTapGesture {
             onTap?()
         }
+        .help(onTap == nil ? "" : markerHelp)
     }
 }
 

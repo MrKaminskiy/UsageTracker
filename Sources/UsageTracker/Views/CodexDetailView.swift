@@ -43,7 +43,7 @@ struct CodexDetailView: View {
     }
 
     private var sectionDivider: some View {
-        Divider().padding(.vertical, 8)
+        Divider().padding(.vertical, 10)
     }
 
     private var header: some View {
@@ -53,7 +53,7 @@ struct CodexDetailView: View {
 
             Image(systemName: "terminal.fill")
                 .font(.system(size: 12))
-                .foregroundColor(provider?.displayColor ?? .secondary)
+                .foregroundStyle(.secondary)
 
             Text("Codex")
                 .font(.system(size: 13, weight: .semibold))
@@ -61,12 +61,7 @@ struct CodexDetailView: View {
             Spacer()
 
             if let plan = provider?.planLabel {
-                Text(plan)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
+                PlanBadge(plan: plan)
             }
         }
     }
@@ -80,31 +75,21 @@ struct CodexDetailView: View {
                             .font(.system(size: 11, weight: .medium))
                             .frame(width: 88, alignment: .leading)
 
-                        GeometryReader { geometry in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06))
-                                RoundedRectangle(cornerRadius: 5)
-                                    .fill(LinearGradient(colors: [item.gradientColors.start, item.gradientColors.end], startPoint: .leading, endPoint: .trailing))
-                                    .frame(width: geometry.size.width * min(item.percentage / 100, 1))
-                            }
-                        }
-                        .frame(height: 10)
+                        UsageBar(percentage: item.percentage, height: UsageDesign.detailBarHeight)
 
-                        Text("\(Int(item.percentage))%")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(item.percentage >= 85 ? item.color : .secondary)
+                        UsagePercentText(percentage: item.percentage)
                             .frame(width: 36, alignment: .trailing)
                     }
 
                     if let reset = item.resetsAt {
                         Text(ClaudeDetailFormat.absoluteResetLabel(for: reset))
-                            .font(.system(size: 9))
+                            .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()
                             .padding(.leading, 96)
                     } else if let detail = item.resetLabel {
                         Text(detail)
-                            .font(.system(size: 9))
+                            .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()
                             .padding(.leading, 96)
@@ -115,78 +100,84 @@ struct CodexDetailView: View {
     }
 
     private func localActivitySection(_ insights: CodexInsights) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            sectionHeader("Local activity · today")
-            Text("from Codex CLI sessions on this Mac")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 8) {
+            DetailSectionHeader(title: "Today on this Mac")
+                .help("From Codex CLI sessions on this Mac.")
 
             if let today = insights.today {
-                Text("\(today.updatedThreadCount) updated chat\(today.updatedThreadCount == 1 ? "" : "s") · \(today.createdThreadCount) started")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .monospacedDigit()
-                Text("\(ClaudeDetailFormat.tokenCount(today.activeThreadTokens)) local tokens in updated chats")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-                    .help("Codex's locally stored cumulative token counter for threads updated today. This is not an account-wide billing total.")
+                HStack(alignment: .top, spacing: 8) {
+                    StatCell(value: "\(today.updatedThreadCount)", label: today.updatedThreadCount == 1 ? "chat updated" : "chats updated")
+                    StatCell(value: "\(today.createdThreadCount)", label: "started")
+                    StatCell(value: ClaudeDetailFormat.tokenCount(today.activeThreadTokens), label: "local tokens")
+                        .help("Codex's locally stored cumulative token counter for threads updated today. This is not an account-wide billing total.")
+                }
             } else {
                 Text("No local Codex chats updated today")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-
-            if let balance = insights.creditBalance, !balance.isEmpty {
-                Text("Credit balance: \(balance)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-
-            if let resets = insights.resetCreditsAvailable, resets > 0 {
-                Text("Usage limit resets: \(resets) available")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-                    .help("Banked full resets of the 5-hour and weekly limits. Run /usage in Codex to use one.")
+                    .foregroundStyle(.secondary)
             }
 
             if !insights.models.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     ForEach(insights.models) { model in
-                        Text("\(model.model) \(model.threadCount)x")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+                        detailRow(model.model, value: "\(model.threadCount) chat\(model.threadCount == 1 ? "" : "s")")
                             .help("\(model.threadCount) chat\(model.threadCount == 1 ? "" : "s") updated today")
+                    }
+                }
+            }
+
+            let balance = insights.creditBalance.flatMap { $0.isEmpty ? nil : $0 }
+            let resets = insights.resetCreditsAvailable.flatMap { $0 > 0 ? $0 : nil }
+            if balance != nil || resets != nil {
+                VStack(alignment: .leading, spacing: 3) {
+                    if let balance {
+                        detailRow("Credit balance", value: balance)
+                    }
+                    if let resets {
+                        detailRow("Limit resets available", value: "\(resets)")
+                            .help("Banked full resets of the 5-hour and weekly limits. Run /usage in Codex to use one.")
                     }
                 }
             }
         }
     }
 
+    /// Label on the left, figure on the right.
+    private func detailRow(_ label: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(value)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+        }
+        .font(.system(size: 11))
+    }
+
     private func recentThreadsSection(_ threads: [CodexThreadSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            sectionHeader("Recent chats")
+        VStack(alignment: .leading, spacing: 6) {
+            DetailSectionHeader(title: "Recent chats")
             ForEach(threads) { thread in
                 HStack(spacing: 6) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(thread.title)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .lineLimit(1)
                         let subtitle = [thread.project, thread.model].compactMap { $0 }.joined(separator: " · ")
                         if !subtitle.isEmpty {
                             Text(subtitle)
-                                .font(.system(size: 9))
+                                .font(.system(size: 10))
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
                         }
                     }
                     Spacer(minLength: 4)
                     Text(ClaudeDetailFormat.tokenCount(thread.tokensUsed))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 11, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
                 }
                 .help("Last active \(thread.updatedAt.formatted(.relative(presentation: .named)))")
             }
@@ -203,18 +194,11 @@ struct CodexDetailView: View {
                     Text("Open ChatGPT")
                     Image(systemName: "arrow.up.right")
                 }
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             Spacer()
         }
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .kerning(0.5)
     }
 }

@@ -106,7 +106,7 @@ actor ClaudeWebProvider {
     private func expired() -> Provider {
         Provider(
             id: "claude", name: "Claude", icon: "brain",
-            items: [], status: .error("Session expired — paste a new cookie")
+            items: [], status: .error("Session expired. Paste a new cookie")
         )
     }
 

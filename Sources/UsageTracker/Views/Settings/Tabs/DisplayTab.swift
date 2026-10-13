@@ -85,7 +85,7 @@ struct DisplayTab: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Show API cost estimate")
-                            Text("Rough estimate based on Claude Code conversation logs. Not actual billing data — may differ significantly from real costs.")
+                            Text("Rough estimate based on Claude Code conversation logs. Not actual billing data, so it can differ significantly from real costs.")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

@@ -86,7 +86,7 @@ struct ClaudeDetailView: View {
     }
 
     private var sectionDivider: some View {
-        Divider().padding(.vertical, 8)
+        Divider().padding(.vertical, 10)
     }
 
     private var header: some View {
@@ -98,7 +98,7 @@ struct ClaudeDetailView: View {
 
             Image(systemName: "brain")
                 .font(.system(size: 12))
-                .foregroundColor(provider?.displayColor ?? .secondary)
+                .foregroundStyle(.secondary)
 
             Text("Claude")
                 .font(.system(size: 13, weight: .semibold))
@@ -106,12 +106,7 @@ struct ClaudeDetailView: View {
             Spacer()
 
             if let plan = provider?.planLabel {
-                Text(plan)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
+                PlanBadge(plan: plan)
             }
         }
     }
@@ -125,35 +120,22 @@ struct ClaudeDetailView: View {
                             .font(.system(size: 11, weight: .medium))
                             .frame(width: 88, alignment: .leading)
 
-                        GeometryReader { geometry in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 5)
-                                    .fill(Color.primary.opacity(0.06))
-                                RoundedRectangle(cornerRadius: 5)
-                                    .fill(LinearGradient(
-                                        colors: [item.gradientColors.start, item.gradientColors.end],
-                                        startPoint: .leading, endPoint: .trailing))
-                                    .frame(width: geometry.size.width * min(item.percentage / 100, 1))
-                            }
-                        }
-                        .frame(height: 10)
+                        UsageBar(percentage: item.percentage, height: UsageDesign.detailBarHeight)
 
-                        Text("\(Int(item.percentage))%")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(item.percentage >= 85 ? item.color : .secondary)
+                        UsagePercentText(percentage: item.percentage)
                             .frame(width: 36, alignment: .trailing)
                     }
 
                     if let resetsAt = item.resetsAt {
                         Text(ClaudeDetailFormat.absoluteResetLabel(for: resetsAt))
-                            .font(.system(size: 9))
+                            .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()
                             .padding(.leading, 96)
                     } else if let detail = item.resetLabel {
                         // Non-time trailing detail (e.g. extra credits "16.10/50")
                         Text(detail)
-                            .font(.system(size: 9))
+                            .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()
                             .padding(.leading, 96)
@@ -165,18 +147,16 @@ struct ClaudeDetailView: View {
 
     private func insightsSection(_ insights: ClaudeInsights) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Insights · last 24h")
-            Text("approximate · based on local sessions on this Mac")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+            DetailSectionHeader(title: "Last 24 hours on this Mac")
+                .help("Approximate, from local Claude Code sessions on this Mac.")
 
             if let avg = insights.avgContextTokens {
                 let sub = Int((insights.subagentShare ?? 0).rounded())
-                Text("~\(ClaudeDetailFormat.tokenCount(avg)) avg context/turn · \(sub)% subagents")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .monospacedDigit()
-                    .help("Average context re-sent each turn (the main token driver) and the share of tokens from subagent-heavy sessions. 0% subagents = plain single-agent sessions.")
+                HStack(spacing: 8) {
+                    StatCell(value: "~\(ClaudeDetailFormat.tokenCount(avg))", label: "avg context per turn")
+                    StatCell(value: "\(sub)%", label: "from subagents")
+                }
+                .help("Average context re-sent each turn (the main token driver) and the share of tokens from subagent-heavy sessions. 0% subagents means plain single-agent sessions.")
             }
 
             let contextWarning = (insights.contextShareOver150k ?? 0) >= ClaudeInsights.contextWarningThreshold
@@ -200,11 +180,11 @@ struct ClaudeDetailView: View {
             if !contextWarning && !subagentWarning {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle")
-                        .font(.system(size: 10))
-                        .foregroundColor(.green)
-                    Text("No usage warnings — last 24h looks efficient")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(UsageLevel.normal.color)
+                    Text("Nothing to flag in the last 24 hours")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -212,46 +192,45 @@ struct ClaudeDetailView: View {
 
     /// Which specific chats drove the >150k-context usage, ranked by heavy tokens.
     private func heaviestChats(_ sessions: [HeavySession]) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("Heaviest chats")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
             ForEach(Array(sessions.enumerated()), id: \.offset) { _, s in
                 HStack(spacing: 6) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(s.title)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .lineLimit(1)
                         if let p = s.project, p != s.title {
                             Text(p)
-                                .font(.system(size: 9))
+                                .font(.system(size: 10))
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
                         }
                     }
                     Spacer(minLength: 4)
                     Text("peaked \(ClaudeDetailFormat.tokenCount(s.peakContextTokens))")
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
                     Text("\(Int(s.share.rounded()))%")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.orange)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(UsageLevel.warning.color)
                         .monospacedDigit()
-                        .frame(width: 32, alignment: .trailing)
+                        .frame(width: 34, alignment: .trailing)
                 }
             }
         }
-        .padding(.leading, 16)
-        .help("Chats that spent the most tokens while their context was above 150k — these add up to the % above. /compact a long chat, or /clear to start fresh.")
+        .padding(.leading, 17)
+        .help("Chats that spent the most tokens while their context was above 150k. Together they make up the % above. /compact a long chat, or /clear to start fresh.")
     }
 
     private func insightRow(stat: String, hint: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
-                .foregroundColor(.orange)
+                .font(.system(size: 11))
+                .foregroundStyle(UsageLevel.warning.color)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(stat)
@@ -259,35 +238,28 @@ struct ClaudeDetailView: View {
                     .monospacedDigit()
                 Text(hint)
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
     /// Account-wide, from claude.ai — unlike the sections below, not limited to this machine.
     private func productSharesSection(_ shares: [UsageShare]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            sectionHeader("This week by product")
+        VStack(alignment: .leading, spacing: 6) {
+            DetailSectionHeader(title: "This week by product")
             ForEach(shares, id: \.name) { share in
                 HStack(spacing: 8) {
                     Text(share.name)
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .frame(width: 84, alignment: .leading)
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.secondary.opacity(0.15))
-                            Capsule()
-                                .fill(Color.accentColor)
-                                .frame(width: geometry.size.width * min(max(share.share, 0), 100) / 100)
-                        }
-                    }
-                    .frame(height: 4)
+                        .frame(width: 88, alignment: .leading)
+                    UsageBar(percentage: share.share, tint: .accentColor, height: UsageDesign.shareBarHeight)
                     Text("\(Int(share.share.rounded()))%")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 32, alignment: .trailing)
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, alignment: .trailing)
                 }
             }
         }
@@ -307,18 +279,19 @@ struct ClaudeDetailView: View {
 
     private func breakdownColumn(title: String, shares: [UsageShare]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            sectionHeader(title)
+            DetailSectionHeader(title: title)
             ForEach(shares, id: \.name) { share in
                 HStack(spacing: 4) {
                     Text(share.name)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(share.name)
                     Spacer(minLength: 4)
                     Text(share.share < 1 ? "<1%" : "\(Int(share.share.rounded()))%")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.system(size: 11))
+                        .monospacedDigit()
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -327,24 +300,22 @@ struct ClaudeDetailView: View {
     }
 
     private func todaySection(_ today: TodayStats) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            sectionHeader("Today")
-            Text(appState.config.showCostEstimate
-                 ? "\(ClaudeProvider.formatDollars(today.cost.rounded(toPlaces: 2))) est · \(today.sessionCount) session\(today.sessionCount == 1 ? "" : "s")"
-                 : "\(today.sessionCount) session\(today.sessionCount == 1 ? "" : "s")")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .monospacedDigit()
-            Text("\(ClaudeDetailFormat.tokenCount(today.totalTokens)) tokens · +\(today.linesAdded) / −\(today.linesRemoved) lines")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .monospacedDigit()
+        VStack(alignment: .leading, spacing: 8) {
+            DetailSectionHeader(title: "Today")
+            HStack(alignment: .top, spacing: 8) {
+                if appState.config.showCostEstimate {
+                    StatCell(value: ClaudeProvider.formatDollars(today.cost.rounded(toPlaces: 2)), label: "est. cost")
+                }
+                StatCell(value: "\(today.sessionCount)", label: today.sessionCount == 1 ? "session" : "sessions")
+                StatCell(value: ClaudeDetailFormat.tokenCount(today.totalTokens), label: "tokens")
+                StatCell(value: "+\(ClaudeDetailFormat.tokenCount(today.linesAdded)) −\(ClaudeDetailFormat.tokenCount(today.linesRemoved))", label: "lines")
+            }
             if today.cacheReadTokens > 0 {
-                Text("\(ClaudeDetailFormat.tokenCount(today.cacheReadTokens)) cache reads · \(ClaudeDetailFormat.tokenCount(today.newTokens)) new")
+                Text("\(ClaudeDetailFormat.tokenCount(today.cacheReadTokens)) cache reads, \(ClaudeDetailFormat.tokenCount(today.newTokens)) new")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                     .monospacedDigit()
-                    .help("Cache reads are re-sent context (cheap). \"New\" is input + output + cache writes — the tokens that reflect actual work.")
+                    .help("Cache reads are re-sent context (cheap). \"New\" is input + output + cache writes: the tokens that reflect actual work.")
             }
         }
     }
@@ -359,19 +330,12 @@ struct ClaudeDetailView: View {
                     Text("Open claude.ai usage")
                     Image(systemName: "arrow.up.right")
                 }
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             Spacer()
         }
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .kerning(0.5)
     }
 }
 

@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 enum UsageItemKind: Equatable, Hashable {
     case standard
@@ -21,24 +21,6 @@ struct UsageItem: Identifiable, Equatable {
     var percentage: Double {
         guard limit > 0 else { return 0 }
         return (current / limit) * 100
-    }
-
-    var gradientColors: (start: Color, end: Color) {
-        switch percentage {
-        case 0..<60:
-            return (Color(red: 0.204, green: 0.780, blue: 0.349),  // #34C759
-                    Color(red: 0.188, green: 0.820, blue: 0.345))  // #30D158
-        case 60..<85:
-            return (Color(red: 1.0, green: 0.624, blue: 0.039),    // #FF9F0A
-                    Color(red: 1.0, green: 0.702, blue: 0.251))    // #FFB340
-        default:
-            return (Color(red: 1.0, green: 0.231, blue: 0.188),    // #FF3B30
-                    Color(red: 1.0, green: 0.412, blue: 0.380))    // #FF6961
-        }
-    }
-
-    var color: Color {
-        gradientColors.start
     }
 }
 
@@ -133,14 +115,6 @@ struct Provider: Identifiable, Equatable {
 
     var maxPercentage: Double {
         items.map(\.percentage).max() ?? 0
-    }
-
-    var displayColor: Color {
-        switch maxPercentage {
-        case 0..<60: return .green
-        case 60..<85: return .yellow
-        default: return .red
-        }
     }
 }
 

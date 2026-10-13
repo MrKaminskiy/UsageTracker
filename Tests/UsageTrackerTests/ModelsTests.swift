@@ -17,17 +17,17 @@ struct UsageItemTests {
         #expect(item.percentage == 0.0)
     }
 
-    @Test("Color thresholds: green below 60, amber 60..<85, red 85+")
-    func usageItemColor() {
-        let green = UsageItem(label: "G", current: 59, limit: 100, resetLabel: nil)
-        let amber = UsageItem(label: "A", current: 60, limit: 100, resetLabel: nil)
-        let amberHigh = UsageItem(label: "AH", current: 84, limit: 100, resetLabel: nil)
-        let red = UsageItem(label: "R", current: 85, limit: 100, resetLabel: nil)
+    @Test("Usage level thresholds: normal below 60, warning 60..<85, critical 85+")
+    func usageLevelThresholds() {
+        #expect(UsageLevel(percentage: 0) == .normal)
+        #expect(UsageLevel(percentage: 59.999) == .normal)
+        #expect(UsageLevel(percentage: 60) == .warning)
+        #expect(UsageLevel(percentage: 84.999) == .warning)
+        #expect(UsageLevel(percentage: 85) == .critical)
+        #expect(UsageLevel(percentage: 130) == .critical)
 
-        #expect(green.color != amber.color)
-        #expect(amber.color == amberHigh.color)
-        #expect(amberHigh.color != red.color)
-        #expect(green.color != red.color)
+        let item = UsageItem(label: "W", current: 34, limit: 40, resetLabel: nil)  // 85%
+        #expect(UsageLevel(percentage: item.percentage) == .critical)
     }
 
     @Test("UsageItem resetsAt defaults to nil and is settable")

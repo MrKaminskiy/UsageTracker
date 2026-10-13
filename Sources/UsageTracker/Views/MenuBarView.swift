@@ -71,7 +71,8 @@ struct MenuBarView: View {
             }
 
             Divider()
-                .padding(.vertical, 8)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
             footer
         }
@@ -80,39 +81,44 @@ struct MenuBarView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             if appState.isLoading {
                 ProgressView()
-                    .scaleEffect(0.8)
-                Text("Loading...")
+                    .controlSize(.small)
+                    .padding(.bottom, 2)
+                Text("Loading usage…")
                     .font(.system(size: 13, weight: .medium))
             } else if appState.transientFailureCount > 0 {
                 Image(systemName: "wifi.exclamationmark")
-                    .font(.system(size: 24))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 22))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 2)
 
                 Text("Can't reach the service")
                     .font(.system(size: 13, weight: .medium))
 
-                Text("Rate-limited or offline — retrying automatically")
+                Text("Rate-limited or offline. Retrying automatically.")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             } else {
-                Image(systemName: "exclamationmark.circle")
-                    .font(.system(size: 24))
-                    .foregroundColor(.secondary)
+                Image(systemName: "gauge.with.dots.needle.0percent")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 2)
 
-                Text("No usage data")
+                Text("No usage data yet")
                     .font(.system(size: 13, weight: .medium))
 
-                Text("Sign in to Claude Code or Cursor")
+                Text("Sign in to Claude Code, Codex, or Cursor, or add an API key in Settings.")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 24)
+        .padding(.horizontal, 12)
     }
 
     private var maxProvider: Provider? {
@@ -182,12 +188,13 @@ struct MenuBarView: View {
             }
             .buttonStyle(.icon)
             .disabled(appState.isLoading)
+            .help("Refresh now")
 
             Spacer()
 
             if let lastUpdated = appState.lastUpdated {
                 Text("Updated \(lastUpdated.formatted(.relative(presentation: .named).locale(Locale(identifier: "en_US"))))")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
 
@@ -196,9 +203,10 @@ struct MenuBarView: View {
             Button {
                 NotificationCenter.default.post(name: .openSettings, object: nil)
             } label: {
-                Image(systemName: "gear")
+                Image(systemName: "gearshape")
             }
             .buttonStyle(.icon)
+            .help("Settings")
         }
     }
 }

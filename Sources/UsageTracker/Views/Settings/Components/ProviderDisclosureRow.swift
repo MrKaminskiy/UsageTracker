@@ -83,7 +83,7 @@ struct ProviderDisclosureRow: View {
                             .font(.system(size: 13))
                         if isUntested && isExpanded {
                             Text("Untested")
-                                .font(.system(size: 9, weight: .medium))
+                                .font(.system(size: 10, weight: .medium))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.orange.opacity(0.15))
@@ -124,9 +124,7 @@ struct ProviderDisclosureRow: View {
     private var limitsSection: some View {
         let items = liveProvider?.items ?? []
         VStack(alignment: .leading, spacing: 6) {
-            Text("LIMITS")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
+            DetailSectionHeader(title: "Limits")
 
             if items.isEmpty {
                 emptyLimitsView
@@ -134,10 +132,9 @@ struct ProviderDisclosureRow: View {
             } else {
                 VStack(spacing: 2) {
                     ForEach(items) { item in
-                        UsageItemRow(item: item)
+                        UsageItemRow(item: item, reservesMarkerSpace: false)
                     }
                 }
-                .padding(.leading, -24) // UsageItemRow internally pads .leading 24; cancel it for full-width
             }
         }
         .padding(.horizontal, SettingsDesign.rowHorizontalPadding)
@@ -152,8 +149,13 @@ struct ProviderDisclosureRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                 Spacer()
-                Link("View dashboard ↗", destination: url)
-                    .font(.system(size: 11))
+                Link(destination: url) {
+                    HStack(spacing: 3) {
+                        Text("View dashboard")
+                        Image(systemName: "arrow.up.right")
+                    }
+                }
+                .font(.system(size: 11))
             }
         } else {
             Text(emptyLimitsMessage)
@@ -171,7 +173,7 @@ struct ProviderDisclosureRow: View {
         if provider.keyConfig != nil {
             return "Add an API key to start tracking."
         }
-        return "No data yet — usage will appear after the next refresh."
+        return "No data yet. Usage appears after the next refresh."
     }
 
     private func apiKeySection(keyConfig: ProviderKeyConfig) -> some View {

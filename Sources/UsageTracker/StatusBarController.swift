@@ -6,6 +6,37 @@ extension Notification.Name {
     static let showOnboarding = Notification.Name("showOnboarding")
 }
 
+/// Brings an app window in front of whatever app is active.
+///
+/// The app is an LSUIElement accessory, and since macOS 14 `activate(ignoringOtherApps:)` is a
+/// request the system may decline, so windows opened from the menu bar landed behind the
+/// frontmost app. Becoming a regular app while a window is open makes activation reliable and
+/// puts the window in Cmd-Tab; `endPresenting` drops back to menu-bar-only once none are left.
+@MainActor
+enum WindowPresenter {
+    static func present(_ window: NSWindow) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        NSApp.activate()
+    }
+
+    static func endPresenting(_ closing: NSWindow) {
+        // Defer: the closing window still reports isVisible during windowWillClose.
+        DispatchQueue.main.async {
+            // A minimized window is still open; it just isn't visible.
+            let anyOpen = NSApp.windows.contains {
+                $0 !== closing && ($0.isVisible || $0.isMiniaturized) && $0.styleMask.contains(.titled)
+            }
+            if !anyOpen {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+    }
+}
+
 @MainActor
 class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
@@ -17,9 +48,9 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     func showSettings() {
-        if let existingWindow = window, existingWindow.isVisible {
-            NSApp.activate(ignoringOtherApps: true)
-            existingWindow.makeKeyAndOrderFront(nil)
+        // `window` is non-nil only while the window is open: visible, minimized, or hidden with the app.
+        if let existingWindow = window {
+            WindowPresenter.present(existingWindow)
             return
         }
 
@@ -28,10 +59,10 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
 
         let newWindow = NSWindow(contentViewController: hostingController)
         newWindow.title = "Settings"
-        newWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        newWindow.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         newWindow.titleVisibility = .hidden
         newWindow.titlebarAppearsTransparent = true
-        newWindow.isMovableByWindowBackground = true
+        newWindow.toolbarStyle = .unified
         newWindow.setContentSize(NSSize(
             width: SettingsDesign.windowDefaultWidth,
             height: SettingsDesign.windowDefaultHeight
@@ -43,15 +74,19 @@ class SettingsWindowController: NSObject, NSWindowDelegate {
         newWindow.center()
         newWindow.delegate = self
         newWindow.isReleasedWhenClosed = false
+        // Left nil, AppKit focuses the first text field on first display. On a provider page
+        // that is the API key field with the whole saved key selected, so one keystroke would
+        // replace it. Start with the window itself as first responder instead.
+        newWindow.initialFirstResponder = hostingController.view
 
         self.window = newWindow
 
-        NSApp.activate(ignoringOtherApps: true)
-        newWindow.makeKeyAndOrderFront(nil)
+        WindowPresenter.present(newWindow)
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Nothing needed - we stay in accessory mode
+        if let closing = notification.object as? NSWindow { WindowPresenter.endPresenting(closing) }
+        window = nil
     }
 }
 
@@ -66,9 +101,8 @@ class OnboardingWindowController: NSObject, NSWindowDelegate {
     }
 
     func showOnboarding() {
-        if let existingWindow = window, existingWindow.isVisible {
-            NSApp.activate(ignoringOtherApps: true)
-            existingWindow.makeKeyAndOrderFront(nil)
+        if let existingWindow = window {
+            WindowPresenter.present(existingWindow)
             return
         }
 
@@ -87,12 +121,13 @@ class OnboardingWindowController: NSObject, NSWindowDelegate {
 
         self.window = newWindow
 
-        NSApp.activate(ignoringOtherApps: true)
-        newWindow.makeKeyAndOrderFront(nil)
+        WindowPresenter.present(newWindow)
     }
 
     func windowWillClose(_ notification: Notification) {
         appState.completeOnboarding()
+        if let closing = notification.object as? NSWindow { WindowPresenter.endPresenting(closing) }
+        window = nil
     }
 }
 

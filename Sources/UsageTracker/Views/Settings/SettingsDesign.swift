@@ -1,12 +1,12 @@
 // Sources/UsageTracker/Views/Settings/SettingsDesign.swift
 import SwiftUI
 
-/// Connection status for a provider, used to drive the row status dot.
+/// Connection status for a provider, shown on its Settings page and in the sidebar.
 enum ConnectionStatus: Equatable {
     case connected   // Loaded with data
     case idle        // Loading or no auth yet
     case failed      // Error fetching
-    case disabled    // Toggled off — dot hidden
+    case disabled    // Toggled off
 
     static func from(providerStatus: ProviderStatus, enabled: Bool) -> ConnectionStatus {
         guard enabled else { return .disabled }
@@ -37,53 +37,110 @@ enum ConnectionStatus: Equatable {
     }
 }
 
-/// The five tabs in the Settings window, in display order.
-enum SettingsTabKind: String, CaseIterable, Identifiable {
+/// A page in the Settings sidebar.
+enum SettingsPage: Hashable, Identifiable {
     case general
-    case providers
     case display
-    case help
+    case howItWorks
     case about
+    case provider(String)
+
+    static let appPages: [SettingsPage] = [.general, .display, .howItWorks, .about]
 
     var id: String { rawValue }
 
-    var label: String {
+    /// Persisted in UserDefaults so the window reopens on the last page.
+    var rawValue: String {
+        switch self {
+        case .general: return "general"
+        case .display: return "display"
+        case .howItWorks: return "help"
+        case .about: return "about"
+        case .provider(let id): return "provider.\(id)"
+        }
+    }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "general": self = .general
+        case "display": self = .display
+        case "help": self = .howItWorks
+        case "about": self = .about
+        default:
+            guard rawValue.hasPrefix("provider.") else { return nil }
+            self = .provider(String(rawValue.dropFirst("provider.".count)))
+        }
+    }
+
+    var title: String {
         switch self {
         case .general: return "General"
-        case .providers: return "Providers"
         case .display: return "Display"
-        case .help: return "Help"
+        case .howItWorks: return "How It Works"
         case .about: return "About"
+        case .provider(let id): return ProviderCatalog.all[id]?.name ?? id
         }
     }
 
     var icon: String {
         switch self {
-        case .general: return "gearshape"
-        case .providers: return "bolt.horizontal.circle"
-        case .display: return "eye"
-        case .help: return "questionmark.circle"
-        case .about: return "info.circle"
+        case .general: return "gearshape.fill"
+        case .display: return "menubar.rectangle"
+        case .howItWorks: return "questionmark"
+        case .about: return "info"
+        case .provider(let id): return ProviderCatalog.all[id]?.icon ?? "circle"
         }
     }
 
-    /// Keyboard shortcut for selecting this tab from the Settings window.
-    var shortcut: KeyEquivalent {
+    /// Extra words the sidebar search matches, so "refresh" finds General.
+    var keywords: [String] {
         switch self {
-        case .general: return "1"
-        case .providers: return "2"
-        case .display: return "3"
-        case .help: return "4"
-        case .about: return "5"
+        case .general: return ["login", "launch", "refresh", "interval", "alert", "context", "notification", "onboarding", "welcome"]
+        case .display: return ["menu bar", "popover", "pin", "hide", "credits", "cost", "estimate"]
+        case .howItWorks: return ["help", "tips", "reorder", "api key"]
+        case .about: return ["version", "update", "github", "issue", "license", "quit"]
+        case .provider(let id):
+            // "API Key" or "Browser Cookie", only for providers that take one.
+            return ["limits", "usage"] + (ProviderCatalog.all[id]?.key.map { [$0.title] } ?? [])
         }
+    }
+
+    func matches(_ query: String) -> Bool {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return true }
+        return ([title] + keywords).contains { $0.localizedCaseInsensitiveContains(query) }
     }
 }
 
-/// Shared layout/style tokens for the Settings window.
+/// Rounded-square symbol tile, like the icons in System Settings and Raycast's sidebar.
+struct IconTile: View {
+    let symbol: String
+    var tint: Color = Color(nsColor: .systemGray)
+    var size: CGFloat = 22
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(
+                shape
+                    .fill(tint)
+                    .overlay(shape.fill(LinearGradient(
+                        colors: [.white.opacity(0.22), .clear],
+                        startPoint: .top, endPoint: .bottom)))
+            )
+            .overlay(shape.strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
+            .accessibilityHidden(true)
+    }
+}
+
+/// Shared layout tokens for the Settings window and the grouped cards onboarding reuses.
 enum SettingsDesign {
-    static let windowDefaultWidth: CGFloat = 560
-    static let windowDefaultHeight: CGFloat = 500
-    static let windowMinWidth: CGFloat = 480
+    static let windowDefaultWidth: CGFloat = 780
+    static let windowDefaultHeight: CGFloat = 560
+    static let windowMinWidth: CGFloat = 680
     static let windowMinHeight: CGFloat = 460
 
     static let cardCornerRadius: CGFloat = 10
@@ -91,9 +148,4 @@ enum SettingsDesign {
     static let rowHorizontalPadding: CGFloat = 14
     static let hairlineColor = Color.primary.opacity(0.08)
     static let hairlineWidth: CGFloat = 0.5
-
-    static let tabIconSize: CGFloat = 38
-    static let tabCornerRadius: CGFloat = 6
-
-    static let statusDotSize: CGFloat = 6
 }

@@ -33,7 +33,8 @@ Located in `Sources/UsageTracker/Providers/`. Each provider fetches usage from a
 - `ContextAlert.swift` - Decides when to fire the Claude context-size notification
 - `Views/MenuBarView.swift` - Main popover content
 - `Views/ProviderRow.swift` - Individual provider display with usage bars
-- `Views/Settings/` - Settings window: `SettingsContent.swift` (shell), `Tabs/` (General, Providers, Display, Help, About), `Components/`, `SettingsDesign.swift` (shared tokens)
+- `Views/Settings/` - Settings window: `SettingsContent.swift` (searchable sidebar + grouped-form pages), `Pages/` (General, Display, How It Works, About, one `ProviderPage` per provider), `ProviderCatalog.swift` (provider tiles, key files, key validators), `SettingsDesign.swift` (`SettingsPage`, `IconTile`, tokens)
+- `Views/UsageDesign.swift` - Shared popover tokens: `UsageLevel` (60/85 severity scale for bars, percentages, menu bar ring), `UsageBar`, stat cells
 - `Views/OnboardingView.swift` - First-launch welcome screen
 - `Providers/ClaudeInsightsAnalyzer.swift` - Incremental transcript analysis: monthly cost + 24h usage insights
 - `Providers/CodexInsightsAnalyzer.swift` - Same for Codex session logs

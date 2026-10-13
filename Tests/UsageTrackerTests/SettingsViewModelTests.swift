@@ -57,34 +57,43 @@ struct PinnedSelectionTests {
     }
 }
 
-@Suite("SettingsTabKind persistence")
-struct SettingsTabKindTests {
-
-    @Test("All cases have unique raw values")
-    func uniqueRawValues() {
-        let raws = SettingsTabKind.allCases.map(\.rawValue)
-        let unique = Set(raws)
-        #expect(raws.count == unique.count)
+@Suite("SettingsPage persistence")
+struct SettingsPageTests {
+    private var allPages: [SettingsPage] {
+        SettingsPage.appPages + ProviderCatalog.all.keys.sorted().map { SettingsPage.provider($0) }
     }
 
-    @Test("Raw value round-trip")
+    @Test("All pages have unique raw values")
+    func uniqueRawValues() {
+        let raws = allPages.map(\.rawValue)
+        #expect(raws.count == Set(raws).count)
+    }
+
+    @Test("Raw value round-trip, including provider pages")
     func rawRoundTrip() {
-        for tab in SettingsTabKind.allCases {
-            let restored = SettingsTabKind(rawValue: tab.rawValue)
-            #expect(restored == tab)
+        for page in allPages {
+            #expect(SettingsPage(rawValue: page.rawValue) == page)
         }
     }
 
-    @Test("Unknown raw value is nil (caller falls back to .general)")
-    func unknownRaw() {
-        #expect(SettingsTabKind(rawValue: "bogus") == nil)
+    @Test("Unknown raw values are nil, so the caller falls back to General")
+    func unknownRawValues() {
+        #expect(SettingsPage(rawValue: "general") == .general)
+        #expect(SettingsPage(rawValue: "help") == .howItWorks)
+        #expect(SettingsPage(rawValue: "providers") == nil)   // caller falls back to .general
+        #expect(SettingsPage(rawValue: "bogus") == nil)
     }
 
-    @Test("Each tab has a distinct keyboard shortcut")
-    func uniqueShortcuts() {
-        let shortcuts = SettingsTabKind.allCases.map { String($0.shortcut.character) }
-        let unique = Set(shortcuts)
-        #expect(shortcuts.count == unique.count)
+    @Test("Search matches titles and keywords, case-insensitively")
+    func searchMatching() {
+        #expect(SettingsPage.general.matches("REFRESH"))
+        #expect(SettingsPage.provider("openrouter").matches("router"))
+        #expect(SettingsPage.provider("claude").matches("cookie"))
+        #expect(!SettingsPage.provider("codex").matches("cookie"))
+        #expect(SettingsPage.provider("openai").matches("api key"))
+        #expect(!SettingsPage.provider("cursor").matches("api key"))
+        #expect(!SettingsPage.about.matches("refresh"))
+        #expect(SettingsPage.display.matches("  "))
     }
 }
 

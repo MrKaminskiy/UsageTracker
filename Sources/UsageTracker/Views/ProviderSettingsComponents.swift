@@ -26,7 +26,9 @@ struct APIKeyInput: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                SecureField(placeholder, text: $key)
+                // Label hidden: inside a grouped Form a titled field renders its title as a row label.
+                SecureField(placeholder, text: $key, prompt: Text(placeholder))
+                    .labelsHidden()
                     .textFieldStyle(.plain)
                     .padding(6)
                     .background(Color(nsColor: .textBackgroundColor))
@@ -45,8 +47,14 @@ struct APIKeyInput: View {
                         .scaleEffect(0.5)
                         .frame(width: 44, height: 24)
                 } else {
-                    Button(buttonLabel) {
+                    Button {
                         onSave()
+                    } label: {
+                        if saved {
+                            Label("Saved", systemImage: "checkmark")
+                        } else {
+                            Text("Save")
+                        }
                     }
                     .disabled(key.isEmpty || !isValid)
                     .buttonStyle(.borderedProminent)
@@ -58,19 +66,19 @@ struct APIKeyInput: View {
             HStack(spacing: 4) {
                 if case .invalid(let message) = validationState {
                     Text(message)
-                        .font(.system(size: 10))
-                        .foregroundColor(.red)
+                        .font(.system(size: 11))
+                        .foregroundStyle(UsageLevel.critical.color)
                 } else if case .valid = validationState {
                     Text("Key valid")
-                        .font(.system(size: 10))
-                        .foregroundColor(.green)
+                        .font(.system(size: 11))
+                        .foregroundStyle(UsageLevel.normal.color)
                 } else {
                     Text(hint)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                     if let linkURL = linkURL {
                         Link(linkTitle, destination: linkURL)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                     }
                 }
             }
@@ -79,9 +87,9 @@ struct APIKeyInput: View {
 
     private var borderColor: Color {
         switch validationState {
-        case .invalid: return Color.red.opacity(0.8)
-        case .valid: return Color.green.opacity(0.8)
-        default: return Color.gray.opacity(0.3)
+        case .invalid: return UsageLevel.critical.color.opacity(0.8)
+        case .valid: return UsageLevel.normal.color.opacity(0.8)
+        default: return Color.primary.opacity(0.15)
         }
     }
 
@@ -90,14 +98,8 @@ struct APIKeyInput: View {
         return true
     }
 
-    private var buttonLabel: String {
-        if saved { return "✓" }
-        if case .valid = validationState { return "Save" }
-        return "Save"
-    }
-
     private var buttonTint: Color {
-        if saved { return .green }
+        if saved { return UsageLevel.normal.color }
         if case .valid = validationState { return .blue }
         return .gray
     }
@@ -128,59 +130,5 @@ struct APIKeyInput: View {
                 }
             }
         }
-    }
-}
-
-/// Provider metadata for the settings UI.
-struct ProviderSettingsItem: Identifiable {
-    let id: String
-    let icon: String
-    let name: String
-    let hint: String
-    let keyConfig: ProviderKeyConfig?
-}
-
-/// API key settings payload for a provider.
-struct ProviderKeyConfig {
-    let placeholder: String
-    let hint: String
-    let linkTitle: String
-    let linkURL: URL?
-    let key: Binding<String>
-    let saved: Binding<Bool>
-    let onSave: () -> Void
-    let validateKey: (String) async -> (Bool, String?)
-}
-
-/// Drop delegate for provider reordering
-struct ProviderDropDelegate: DropDelegate {
-    let item: String
-    let appState: AppState
-
-    func performDrop(info: DropInfo) -> Bool {
-        return true
-    }
-
-    func dropEntered(info: DropInfo) {
-        guard let draggedItem = info.itemProviders(for: [.text]).first else { return }
-
-        draggedItem.loadObject(ofClass: NSString.self) { reading, _ in
-            guard let draggedId = reading as? String, draggedId != item else { return }
-
-            DispatchQueue.main.async {
-                var order = appState.config.providerOrder
-                guard let fromIndex = order.firstIndex(of: draggedId),
-                      let toIndex = order.firstIndex(of: item) else { return }
-
-                withAnimation {
-                    order.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
-                    appState.updateProviderOrder(order)
-                }
-            }
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        return DropProposal(operation: .move)
     }
 }

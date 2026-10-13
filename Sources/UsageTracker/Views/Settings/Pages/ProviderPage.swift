@@ -35,7 +35,7 @@ struct ProviderPage: View {
     private var statusText: String {
         switch status {
         case .connected:
-            if let plan = live?.planLabel { return "Connected, \(plan) plan" }
+            if let plan = live?.planLabel { return "Connected · \(plan) plan" }
             return "Connected"
         case .idle:
             return live?.status == .loading ? "Checking…" : "Not connected"
@@ -50,27 +50,63 @@ struct ProviderPage: View {
     var body: some View {
         SettingsForm {
             Section {
-                Toggle(isOn: Binding(
-                    get: { enabled },
-                    set: { appState.updateProviderEnabled(info.id, enabled: $0) }
-                )) {
-                    Text("Enabled")
-                    Text("Show \(info.name) in the popover and menu bar.")
+                SettingsPageHeader(info.name, badge: info.isUntested ? "Untested" : nil) {
+                    IconTile(symbol: info.icon, tint: info.tint, size: SettingsDesign.headerTileSize)
+                } subtitle: {
+                    statusLine
+                } trailing: {
+                    Toggle("Show \(info.name)", isOn: Binding(
+                        get: { enabled },
+                        set: { appState.updateProviderEnabled(info.id, enabled: $0) }
+                    ))
+                    .labelsHidden()
+                    .help("Show \(info.name) in the popover and menu bar")
                 }
-            } header: {
-                header
             }
 
             if enabled {
-                Section("Limits") {
+                Section {
                     if let items = live?.items, !items.isEmpty {
                         ForEach(items) { item in
-                            UsageItemRow(item: item, reservesMarkerSpace: false)
+                            SettingsLimitRow(item: item)
                         }
                     } else {
-                        Text(emptyLimitsMessage)
+                        Text(LocalizedStringKey(emptyLimitsMessage))
                             .foregroundStyle(.secondary)
                     }
+                } header: {
+                    HStack {
+                        Text("Limits")
+                        Spacer()
+                        if let url = info.dashboardURL {
+                            Link(destination: url) {
+                                HStack(spacing: 3) {
+                                    Text("Usage Dashboard")
+                                    Image(systemName: "arrow.up.right")
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                            .font(.system(size: 12, weight: .regular))
+                        }
+                    }
+                }
+            } else if let url = info.dashboardURL {
+                // No Limits header to carry the link while the provider is off.
+                Section {
+                    Link(destination: url) {
+                        HStack {
+                            Text("Open Usage Dashboard")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -96,62 +132,25 @@ struct ProviderPage: View {
                     }
                 }
             }
-
-            if let url = info.dashboardURL {
-                Section {
-                    Link(destination: url) {
-                        HStack {
-                            Text("Open Usage Dashboard")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 14) {
-            IconTile(symbol: info.icon, tint: info.tint, size: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(info.name)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    if info.isUntested {
-                        Text("Untested")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(UsageLevel.warning.color)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(UsageLevel.warning.color.opacity(0.14)))
-                    }
-                }
-                Text(info.connection)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
-            HStack(spacing: 6) {
+    /// Live status while the provider is on; how it connects while it is off.
+    @ViewBuilder
+    private var statusLine: some View {
+        if status == .disabled {
+            Text(info.connection)
+        } else {
+            HStack(spacing: 5) {
                 if let color = status.color {
-                    Circle().fill(color).frame(width: 7, height: 7)
+                    Circle().fill(color).frame(width: 6, height: 6)
                 }
                 Text(statusText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
                     .lineLimit(2)
-                    .multilineTextAlignment(.trailing)
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(status.voiceOverLabel)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Status: \(statusText)")
         }
-        .padding(.bottom, 10)
     }
 
     private var emptyLimitsMessage: String {
@@ -163,7 +162,7 @@ struct ProviderPage: View {
         if signedOut {
             switch info.id {
             case "claude": return "Sign in to Claude Code, or paste a claude.ai cookie below."
-            case "codex": return "Run codex login in Terminal."
+            case "codex": return "Run `codex login` in Terminal."
             case "cursor": return "Sign in to the Cursor app."
             default: break
             }
@@ -183,5 +182,52 @@ struct ProviderPage: View {
             saved = true
         }
         Task { await appState.refresh() }
+    }
+}
+
+/// A limit as a form row: name and reset on the left, meter and percentage on the right.
+struct SettingsLimitRow: View {
+    let item: UsageItem
+
+    var body: some View {
+        // Redraws each minute so the countdown keeps moving between refreshes.
+        TimelineView(.everyMinute) { context in
+            let detail = Self.detail(for: item, now: context.date)
+            LabeledContent {
+                HStack(spacing: 10) {
+                    UsageBar(percentage: item.percentage)
+                        .frame(width: 140)
+                    UsagePercentText(percentage: item.percentage, size: 12)
+                        .frame(width: 38, alignment: .trailing)
+                }
+            } label: {
+                Text(item.label)
+                if let detail {
+                    // Zero-width space after "/" so "12345.60/50000" wraps at the slash, not mid-number.
+                    Text(detail.replacingOccurrences(of: "/", with: "/\u{200B}"))
+                        .monospacedDigit()
+                }
+            }
+            // One element, read once: the bar and the percentage would each say the number.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(item.label)
+            .accessibilityValue([("\(Int(item.percentage)) percent"), detail].compactMap { $0 }.joined(separator: ", "))
+        }
+    }
+
+    // nonisolated: View conformance makes members @MainActor, and this is pure text logic.
+    private nonisolated static let durationPattern = #"^(\d+d|\d+h \d+m|\d+m)$"#
+
+    /// "Resets in 4h 51m" for windows that reset; the provider's own text ("$12.40 / $50")
+    /// for spend and balance rows; nil once a window's reset time has passed.
+    nonisolated static func detail(for item: UsageItem, now: Date = Date()) -> String? {
+        if let date = item.resetsAt {
+            return relativeResetLabel(date, now: now).map { "Resets in \($0)" }
+        }
+        guard let label = item.resetLabel, !label.isEmpty else { return nil }
+        if label.range(of: durationPattern, options: .regularExpression) != nil {
+            return "Resets in \(label)"
+        }
+        return label
     }
 }

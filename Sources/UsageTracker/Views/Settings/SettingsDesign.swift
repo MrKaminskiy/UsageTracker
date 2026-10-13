@@ -131,8 +131,68 @@ struct IconTile: View {
                         colors: [.white.opacity(0.22), .clear],
                         startPoint: .top, endPoint: .bottom)))
             )
-            .overlay(shape.strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
+            .overlay(shape.strokeBorder(Self.edge, lineWidth: 0.5))
             .accessibilityHidden(true)
+    }
+
+    /// A dark edge on light backgrounds, a light one on dark: near-black tiles (Codex,
+    /// ElevenLabs) otherwise dissolve into a dark sidebar.
+    private static let edge = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.16)
+            : NSColor.black.withAlphaComponent(0.08)
+    })
+}
+
+/// The row every Settings page opens with: tile, title, one-line description, and an optional
+/// trailing control. It stands in for the window title, which the unified toolbar hides.
+struct SettingsPageHeader<Icon: View, Subtitle: View, Trailing: View>: View {
+    let title: String
+    let badge: String?
+    let icon: Icon
+    let subtitle: Subtitle
+    let trailing: Trailing
+
+    init(
+        _ title: String,
+        badge: String? = nil,
+        @ViewBuilder icon: () -> Icon,
+        @ViewBuilder subtitle: () -> Subtitle,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
+        self.title = title
+        self.badge = badge
+        self.icon = icon()
+        self.subtitle = subtitle()
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            icon
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                    if let badge {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(UsageLevel.warning.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(UsageLevel.warning.color.opacity(0.14)))
+                    }
+                }
+                .accessibilityAddTraits(.isHeader)
+                subtitle
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            trailing
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -140,6 +200,8 @@ struct IconTile: View {
 enum SettingsDesign {
     static let windowDefaultWidth: CGFloat = 780
     static let windowDefaultHeight: CGFloat = 560
+    /// Page header tile; the sidebar uses `IconTile`'s 22pt default.
+    static let headerTileSize: CGFloat = 40
     static let windowMinWidth: CGFloat = 680
     static let windowMinHeight: CGFloat = 460
 

@@ -87,7 +87,11 @@ struct SettingsContent: View {
         switch page {
         case .general: GeneralPage(appState: appState)
         case .display: DisplayPage(appState: appState)
-        case .howItWorks: HowItWorksPage()
+        case .howItWorks:
+            HowItWorksPage { page in
+                query = ""  // a filtered sidebar might not list the page being opened
+                selectedRaw = page.rawValue
+            }
         case .about: AboutPage(appState: appState)
         case .provider(let id):
             if let info = ProviderCatalog.all[id] {

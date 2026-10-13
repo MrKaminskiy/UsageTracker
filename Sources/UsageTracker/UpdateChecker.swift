@@ -5,6 +5,11 @@ class UpdateChecker: ObservableObject {
     @Published var updateAvailable: Bool = false
     @Published var latestVersion: String?
     @Published var downloadURL: URL?
+    @Published private(set) var isChecking = false
+    /// When the feed last answered, so About says "up to date" only after a real check.
+    @Published private(set) var checkedAt: Date?
+    /// The last check got no usable answer (offline, rate-limited, unreadable feed).
+    @Published private(set) var lastCheckFailed = false
 
     /// GitHub Releases API endpoint for the latest published release.
     private let feedURL: URL?
@@ -14,7 +19,9 @@ class UpdateChecker: ObservableObject {
     }
 
     func check() async {
-        guard let feedURL else { return }
+        guard let feedURL, !isChecking else { return }
+        isChecking = true
+        defer { isChecking = false }
 
         var request = URLRequest(url: feedURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -22,8 +29,13 @@ class UpdateChecker: ObservableObject {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
-            guard let release = Self.parse(data) else { return }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let release = Self.parse(data) else {
+                lastCheckFailed = true
+                return
+            }
+            checkedAt = Date()
+            lastCheckFailed = false
 
             let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 
@@ -33,7 +45,8 @@ class UpdateChecker: ObservableObject {
                 downloadURL = release.url
             }
         } catch {
-            // Silently fail — update check is best-effort
+            // Best-effort: only About surfaces this, and only as a status line.
+            lastCheckFailed = true
         }
     }
 

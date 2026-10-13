@@ -12,6 +12,14 @@ struct GeneralPage: View {
     var body: some View {
         SettingsForm {
             Section {
+                SettingsPageHeader("General") {
+                    IconTile(symbol: SettingsPage.general.icon, size: SettingsDesign.headerTileSize)
+                } subtitle: {
+                    Text("Startup, refresh, and alerts.")
+                }
+            }
+
+            Section {
                 // Binding setter, not onChange: onAppear's status read must not call register().
                 Toggle("Launch at Login", isOn: Binding(
                     get: { launchAtLogin },

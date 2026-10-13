@@ -38,6 +38,16 @@ struct DisplayPage: View {
 
     var body: some View {
         SettingsForm {
+            Section {
+                SettingsPageHeader("Display") {
+                    IconTile(symbol: SettingsPage.display.icon, size: SettingsDesign.headerTileSize)
+                } subtitle: {
+                    Text("What the menu bar and popover show.")
+                } trailing: {
+                    MenuBarPreview(percentage: appState.maxPercentage)
+                }
+            }
+
             Section("Menu Bar") {
                 Picker(selection: pinnedSelection) {
                     Text("Highest usage").tag(PinnedSelection.auto)
@@ -46,7 +56,7 @@ struct DisplayPage: View {
                             .tag(PinnedSelection.pinned(providerId: option.providerId, itemLabel: option.pinKey))
                     }
                 } label: {
-                    Text("Menu Bar Shows")
+                    Text("Limit Shown")
                     Text("You can also click a limit in the popover to pin it.")
                 }
             }
@@ -92,5 +102,28 @@ struct DisplayPage: View {
                 MenuBarOption(providerId: provider.id, providerName: provider.name, displayLabel: item.label, pinKey: item.stablePinKey)
             }
         }
+    }
+}
+
+/// The menu bar ring as it looks right now, so changing the shown limit has visible feedback.
+private struct MenuBarPreview: View {
+    let percentage: Double
+
+    var body: some View {
+        MenuBarIcon(percentage: percentage, isLoading: false)
+            .frame(width: 22, height: 22)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(SettingsDesign.hairlineColor, lineWidth: SettingsDesign.hairlineWidth)
+            )
+            .help("How the menu bar icon looks now")
+            .accessibilityElement()
+            .accessibilityLabel("Menu bar preview, \(Int(percentage)) percent")
     }
 }

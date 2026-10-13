@@ -144,6 +144,14 @@ struct CodexDetailView: View {
                     .monospacedDigit()
             }
 
+            if let resets = insights.resetCreditsAvailable, resets > 0 {
+                Text("Usage limit resets: \(resets) available")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                    .help("Banked full resets of the 5-hour and weekly limits. Run /usage in Codex to use one.")
+            }
+
             if !insights.models.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(insights.models) { model in

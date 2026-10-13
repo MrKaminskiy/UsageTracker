@@ -77,6 +77,31 @@ func isTransientHTTPStatus(_ statusCode: Int) -> Bool {
     statusCode == 429 || statusCode >= 500
 }
 
+/// An array from a usage response whose elements the server defines and may extend.
+/// Elements that are null or the wrong shape are dropped, and a value that isn't an array
+/// at all reads as empty, so one odd row can't fail the whole response decode.
+struct LossyArray<Element: Codable>: Codable {
+    var elements: [Element]
+
+    private struct Slot: Codable {
+        var value: Element?
+        init(from decoder: Decoder) throws { value = try? Element(from: decoder) }
+        func encode(to encoder: Encoder) throws { try value.encode(to: encoder) }
+    }
+
+    init(_ elements: [Element]) { self.elements = elements }
+
+    init(from decoder: Decoder) throws {
+        let slots = try? decoder.singleValueContainer().decode([Slot].self)
+        elements = slots?.compactMap(\.value) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(elements)
+    }
+}
+
 /// Maps HTTP status codes to user-friendly error messages.
 func httpErrorMessage(_ statusCode: Int) -> String {
     switch statusCode {
@@ -104,6 +129,7 @@ struct Provider: Identifiable, Equatable {
     /// refreshes can still be retired once it is too old to stand behind.
     var fetchedAt: Date? = nil
     var codexInsights: CodexInsights? = nil  // local CLI activity and account details (Codex only)
+    var productShares: [UsageShare] = []     // this week's usage split by product (Claude only)
 
     var maxPercentage: Double {
         items.map(\.percentage).max() ?? 0

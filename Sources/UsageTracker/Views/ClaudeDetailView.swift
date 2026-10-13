@@ -50,6 +50,11 @@ struct ClaudeDetailView: View {
             if let provider {
                 barsSection(provider)
 
+                if !provider.productShares.isEmpty {
+                    sectionDivider
+                    productSharesSection(provider.productShares)
+                }
+
                 if let insights = provider.insights {
                     sectionDivider
                     insightsSection(insights)
@@ -257,6 +262,36 @@ struct ClaudeDetailView: View {
                     .foregroundStyle(.tertiary)
             }
         }
+    }
+
+    /// Account-wide, from claude.ai — unlike the sections below, not limited to this machine.
+    private func productSharesSection(_ shares: [UsageShare]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            sectionHeader("This week by product")
+            ForEach(shares, id: \.name) { share in
+                HStack(spacing: 8) {
+                    Text(share.name)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .frame(width: 84, alignment: .leading)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.secondary.opacity(0.15))
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .frame(width: geometry.size.width * min(max(share.share, 0), 100) / 100)
+                        }
+                    }
+                    .frame(height: 4)
+                    Text("\(Int(share.share.rounded()))%")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 32, alignment: .trailing)
+                }
+            }
+        }
+        .help("Share of this week's usage by product, across all your devices (from claude.ai).")
     }
 
     private func breakdownSection(_ insights: ClaudeInsights) -> some View {

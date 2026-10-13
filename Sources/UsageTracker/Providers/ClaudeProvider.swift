@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 actor ClaudeProvider {
     private let keychainService = "Claude Code-credentials"
@@ -49,6 +48,24 @@ actor ClaudeProvider {
         var seven_day_sonnet: UsageData?
         var seven_day_opus: UsageData?
         var extra_usage: ExtraUsage?
+        // Claude Code's /usage titles this "Claude Code and Cowork credit".
+        var cinder_cove: UsageData?
+        // A dollar-denominated credit; Claude Code's /usage titles it with `label`, else "Credit".
+        var wattle_ember: DollarCredit?
+        // The server's meter rows. Per-model weekly caps (e.g. Fable) only arrive here,
+        // as `kind == "weekly_scoped"` rows with a `scope.model.display_name`.
+        var limits: LossyArray<LimitRow>?
+        // claude.ai's "This week's usage by product" (Claude Code, Chats, Cowork, Other).
+        var seven_day_breakdown: WeeklyBreakdown?
+
+        struct WeeklyBreakdown: Codable {
+            var rows: LossyArray<Row>?
+
+            struct Row: Codable {
+                var display_name: String?
+                var percent: Double?
+            }
+        }
 
         struct UsageData: Codable {
             var utilization: Double?
@@ -59,6 +76,42 @@ actor ClaudeProvider {
             var is_enabled: Bool?
             var used_credits: Double?
             var monthly_limit: Double?
+            var currency: String?
+        }
+
+        struct DollarCredit: Codable {
+            var utilization: Double?
+            var resets_at: String?
+            var label: String?
+            var limit_dollars: Double?
+            var used_dollars: Double?
+        }
+
+        struct LimitRow: Codable {
+            var kind: String?
+            var percent: Double?
+            var resets_at: String?
+            var scope: Scope?
+
+            struct Scope: Codable {
+                var model: Named?
+                var surface: Named?
+            }
+
+            struct Named: Codable {
+                var display_name: String?
+            }
+
+            // Rows are server-defined and new kinds ship without notice, so a row whose
+            // fields come back in an unexpected shape degrades to nils instead of failing
+            // the whole usage decode.
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                kind = try? c.decodeIfPresent(String.self, forKey: .kind)
+                percent = try? c.decodeIfPresent(Double.self, forKey: .percent)
+                resets_at = try? c.decodeIfPresent(String.self, forKey: .resets_at)
+                scope = try? c.decodeIfPresent(Scope.self, forKey: .scope)
+            }
         }
     }
 
@@ -143,6 +196,9 @@ actor ClaudeProvider {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        // The server localizes display names (e.g. "Chats") to Accept-Language, which
+        // URLSession fills from the system languages; the app's UI is English.
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
         request.setValue("UsageTracker", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 10
 
@@ -225,7 +281,8 @@ actor ClaudeProvider {
             boostStatus: boostStatus,
             costEstimate: insights?.monthlyCost,
             planLabel: Self.planLabel(from: oauth.subscriptionType),
-            insights: insights
+            insights: insights,
+            productShares: Self.productShares(from: usage)
         )
     }
 
@@ -269,19 +326,82 @@ actor ClaudeProvider {
             .appendingPathComponent(".claude/.credentials.json")
     }
 
+    // Read through /usr/bin/security, the tool Claude Code itself reads and writes the item
+    // with, never through SecItemCopyMatching. Every token refresh Claude Code writes makes
+    // macOS reset the item's partition list to `apple-tool:` alone, which evicts any
+    // "Always Allow" granted to this app: a native read prompted for the keychain password
+    // after each refresh, roughly every 8 hours (securityd: "ACL partition mismatch: client
+    // teamid:… ACL (apple-tool:)"). The security tool is always on that list, so this read
+    // never prompts.
     private func loadFromKeychain() -> (credentials: Credentials, raw: [String: Any])? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
+        Self.readGenericPassword(service: keychainService).flatMap(decode)
+    }
 
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+    static func readGenericPassword(
+        service: String,
+        tool: URL = URL(fileURLWithPath: "/usr/bin/security"),
+        timeout: TimeInterval = 5
+    ) -> Data? {
+        let process = Process()
+        process.executableURL = tool
+        process.arguments = ["find-generic-password", "-s", service, "-w"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+        do { try process.run() } catch { return nil }
 
-        guard status == errSecSuccess, let data = result as? Data else { return nil }
-        return decode(data)
+        // Drain the pipe while waiting: output larger than the pipe buffer would otherwise
+        // block the tool from exiting.
+        final class Drained: @unchecked Sendable { var data = Data() }
+        let drained = Drained()
+        let read = DispatchSemaphore(value: 0)
+        let reader = output.fileHandleForReading
+        DispatchQueue.global().async {
+            drained.data = reader.readDataToEndOfFile()
+            read.signal()
+        }
+
+        // Should the item's ACL ever stop trusting the tool, it would sit on a password
+        // dialog; give up rather than stall the refresh behind it. Claude Code reads through
+        // the same tool several times a minute, so that state would not last.
+        guard exited.wait(timeout: .now() + timeout) == .success else {
+            process.terminate()
+            if exited.wait(timeout: .now() + 1) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            return nil
+        }
+        // A child that inherited stdout could hold the pipe open past the tool's exit.
+        guard read.wait(timeout: .now() + 2) == .success,
+              process.terminationStatus == 0 else { return nil }
+        var data = drained.data
+        while data.last == UInt8(ascii: "\n") { data.removeLast() }
+        return data.isEmpty ? nil : hexDecodedIfNeeded(data)
+    }
+
+    /// `security -w` prints the password as hex when any byte is non-printable — a newline,
+    /// or any non-ASCII character such as an accented MCP server name in the JSON. JSON
+    /// itself always starts with `{`, which is never a hex digit.
+    static func hexDecodedIfNeeded(_ data: Data) -> Data {
+        guard data.first != UInt8(ascii: "{"), data.count.isMultiple(of: 2) else { return data }
+        func nibble(_ byte: UInt8) -> UInt8? {
+            switch byte {
+            case UInt8(ascii: "0")...UInt8(ascii: "9"): return byte - UInt8(ascii: "0")
+            case UInt8(ascii: "a")...UInt8(ascii: "f"): return byte - UInt8(ascii: "a") + 10
+            case UInt8(ascii: "A")...UInt8(ascii: "F"): return byte - UInt8(ascii: "A") + 10
+            default: return nil
+            }
+        }
+        var decoded = Data(capacity: data.count / 2)
+        var index = data.startIndex
+        while index < data.endIndex {
+            guard let high = nibble(data[index]), let low = nibble(data[index + 1]) else { return data }
+            decoded.append(high << 4 | low)
+            index += 2
+        }
+        return decoded
     }
 
     private func loadFromFile(_ url: URL) -> (credentials: Credentials, raw: [String: Any])? {
@@ -501,28 +621,96 @@ actor ClaudeProvider {
             ))
         }
 
+        let legacyModelLabels = items.map(\.label).filter { $0 == "Sonnet" || $0 == "Opus" }
+        for row in usage.limits?.elements ?? [] {
+            guard row.kind == "weekly_scoped",
+                  let model = row.scope?.model?.display_name, !model.isEmpty,
+                  let percent = row.percent else { continue }
+            // The legacy Sonnet/Opus fields above may describe the same cap; keep one row.
+            guard !legacyModelLabels.contains(where: { model.localizedCaseInsensitiveContains($0) }) else { continue }
+            let surface = row.scope?.surface?.display_name.flatMap { $0.isEmpty ? nil : $0 }
+            let resetDate = Self.parseResetDate(row.resets_at)
+            items.append(UsageItem(
+                label: surface.map { "\(model) · \($0)" } ?? model,
+                current: percent,
+                limit: 100,
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate
+            ))
+        }
+
+        if let credit = usage.cinder_cove, let utilization = credit.utilization {
+            let resetDate = Self.parseResetDate(credit.resets_at)
+            items.append(UsageItem(
+                label: "Code & Cowork",
+                current: utilization,
+                limit: 100,
+                resetLabel: relativeResetLabel(resetDate),
+                resetsAt: resetDate,
+                kind: .extraUsage
+            ))
+        }
+
+        if let credit = usage.wattle_ember, let utilization = credit.utilization {
+            let resetDate = Self.parseResetDate(credit.resets_at)
+            let dollars = credit.used_dollars.flatMap { used in
+                credit.limit_dollars.map { "\(formatDollars(used))/\(formatDollars($0))" }
+            }
+            // When the trailing slot carries amounts, leave resetsAt unset: the cache restore
+            // and carry-forward paths rewrite the label as a countdown for any dated row.
+            items.append(UsageItem(
+                label: credit.label.flatMap { $0.isEmpty ? nil : $0 } ?? "Credit",
+                current: utilization,
+                limit: 100,
+                resetLabel: dollars ?? relativeResetLabel(resetDate),
+                resetsAt: dollars == nil ? resetDate : nil,
+                kind: .extraUsage
+            ))
+        }
+
         if let extraItem = Self.extraCreditsItem(from: usage.extra_usage) {
             items.append(extraItem)
         }
         return items
     }
 
+    static func productShares(from usage: UsageResponse) -> [UsageShare] {
+        (usage.seven_day_breakdown?.rows?.elements ?? []).compactMap { row in
+            guard let name = row.display_name, !name.isEmpty, let percent = row.percent else { return nil }
+            return UsageShare(name: name, share: percent)
+        }
+    }
+
     static func extraCreditsItem(from extra: UsageResponse.ExtraUsage?) -> UsageItem? {
         guard let extra, extra.is_enabled == true,
               let limitMinor = extra.monthly_limit, limitMinor > 0 else { return nil }
         // The API reports credits in minor units (verified live: 1610/5000 =
-        // €16.10 of €50.00) and exposes no currency, so no symbol is shown.
+        // €16.10 of €50.00). Newer responses carry an ISO `currency` code; older
+        // ones don't, and then no symbol is shown. Zero-decimal currencies have no minor
+        // unit, so their amounts are already whole — the same set Claude Code special-cases.
         // Amounts ride in the trailing detail slot (resetLabel) so the row
         // keeps the standard bar + percentage layout.
-        let used = (extra.used_credits ?? 0) / 100
-        let limit = limitMinor / 100
+        let zeroDecimal: Set<String> = ["JPY", "KRW", "VND"]
+        let divisor: Double = zeroDecimal.contains(extra.currency?.uppercased() ?? "") ? 1 : 100
+        let used = (extra.used_credits ?? 0) / divisor
+        let limit = limitMinor / divisor
+        let symbol = currencySymbol(for: extra.currency) ?? ""
         return UsageItem(
             label: "Extra credits",
             current: used,
             limit: limit,
-            resetLabel: "\(formatCredits(used))/\(formatCredits(limit))",
+            resetLabel: "\(symbol)\(formatCredits(used))/\(symbol)\(formatCredits(limit))",
             kind: .extraUsage
         )
+    }
+
+    static func currencySymbol(for code: String?) -> String? {
+        guard let code, code.count == 3 else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.currencyCode = code.uppercased()
+        return formatter.currencySymbol
     }
 
     static func formatCredits(_ value: Double) -> String {

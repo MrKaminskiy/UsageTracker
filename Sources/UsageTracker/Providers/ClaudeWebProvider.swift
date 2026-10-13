@@ -85,7 +85,8 @@ actor ClaudeWebProvider {
                     id: "claude", name: "Claude", icon: "brain",
                     items: items,
                     status: .loaded,
-                    boostStatus: Claude2xDetector.loadFromDisk().status()
+                    boostStatus: Claude2xDetector.loadFromDisk().status(),
+                    productShares: ClaudeProvider.productShares(from: usage)
                 )
             }
         }
@@ -115,6 +116,8 @@ actor ClaudeWebProvider {
         request.timeoutInterval = 15
         request.setValue("sessionKey=\(key)", forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // Display names are localized to Accept-Language; keep them in the app's language.
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
         return request
     }
 

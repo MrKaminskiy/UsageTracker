@@ -28,4 +28,5 @@ struct CodexInsights: Equatable, Sendable {
     var recentThreads: [CodexThreadSummary] = []
     var models: [CodexModelSummary] = []
     var creditBalance: String? = nil
+    var resetCreditsAvailable: Int? = nil
 }

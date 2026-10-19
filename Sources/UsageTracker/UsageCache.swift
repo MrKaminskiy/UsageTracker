@@ -14,6 +14,15 @@ import Foundation
 enum UsageCache {
     /// A provider's reading is ignored once it is this old: a day-stale number is worse than none.
     static let maxAge: TimeInterval = 24 * 60 * 60
+    /// Claude readings are kept far longer. An account nobody has used in Claude Code for a while
+    /// can't be refreshed (its login lives in Claude Code's keychain item, which is read-only to
+    /// us), yet its last numbers are still the best answer to "how much room is left there?" —
+    /// rows whose window has since reset are shown as reset rather than replayed.
+    static let claudeMaxAge: TimeInterval = 30 * 24 * 60 * 60
+
+    static func maxAge(forProviderID id: String) -> TimeInterval {
+        isClaudeProviderID(id) ? claudeMaxAge : maxAge
+    }
 
     struct Snapshot: Codable {
         var providers: [CachedProvider]
@@ -29,6 +38,9 @@ enum UsageCache {
         var fetchedAt: Date
         var items: [CachedItem]
         var planLabel: String?
+        // Claude only. Optional so files written before multiple accounts still decode.
+        var accountLabel: String?
+        var accountUuid: String?
     }
 
     struct CachedItem: Codable {
@@ -63,9 +75,10 @@ enum UsageCache {
     /// Per provider: a fresh `.loaded` reading replaces the entry, a fresh `.notConnected`
     /// removes it (genuinely signed out — stale usage would be a lie), and anything else
     /// (`.error`, `.loading`, or a provider that threw) leaves the stored entry as it was.
-    static func save(_ providers: [Provider], freshlyFetched: Set<String>, now: Date = Date()) {
+    static func save(_ providers: [Provider], freshlyFetched: Set<String>, now: Date = Date(),
+                     accounts: [ClaudeAccount]? = nil) {
         let kept = merging(providers, into: loadSnapshot()?.providers ?? [],
-                           freshlyFetched: freshlyFetched, now: now)
+                           freshlyFetched: freshlyFetched, now: now, accounts: accounts)
 
         guard !kept.isEmpty else {
             clear()
@@ -81,11 +94,15 @@ enum UsageCache {
     }
 
     /// Pure part of `save`, so the merge rules are testable without touching the disk.
+    ///
+    /// With `accounts`, a stored Claude reading whose folder is no longer signed in, or now holds
+    /// a different account, is dropped too — otherwise it would come back at every launch.
     static func merging(
         _ providers: [Provider],
         into existing: [CachedProvider],
         freshlyFetched: Set<String>,
-        now: Date = Date()
+        now: Date = Date(),
+        accounts: [ClaudeAccount]? = nil
     ) -> [CachedProvider] {
         var stored: [String: CachedProvider] = [:]
         for provider in existing {
@@ -111,7 +128,9 @@ enum UsageCache {
                             isExtraUsage: $0.kind == .extraUsage
                         )
                     },
-                    planLabel: provider.planLabel
+                    planLabel: provider.planLabel,
+                    accountLabel: provider.accountLabel,
+                    accountUuid: provider.accountUuid
                 )
             case .notConnected:
                 stored.removeValue(forKey: provider.id)
@@ -123,7 +142,12 @@ enum UsageCache {
         // Housekeeping: entries past their usable age are dropped on write rather than left to
         // accumulate for a provider the user has stopped using.
         return stored.values
-            .filter { now.timeIntervalSince($0.fetchedAt) <= maxAge }
+            .filter { now.timeIntervalSince($0.fetchedAt) <= maxAge(forProviderID: $0.id) }
+            .filter { cached in
+                accounts.map {
+                    ClaudeAccountDiscovery.isCurrent(providerID: cached.id, accountUuid: cached.accountUuid, accounts: $0)
+                } ?? true
+            }
             .sorted { $0.id < $1.id }
     }
 
@@ -146,7 +170,7 @@ enum UsageCache {
     static func restore(_ snapshot: Snapshot, now: Date = Date()) -> (providers: [Provider], savedAt: Date)? {
         let usable = snapshot.providers.filter {
             // A reading stamped in the future is a clock change, not something to reason about.
-            $0.fetchedAt <= now && now.timeIntervalSince($0.fetchedAt) <= maxAge
+            $0.fetchedAt <= now && now.timeIntervalSince($0.fetchedAt) <= maxAge(forProviderID: $0.id)
         }
 
         let providers: [Provider] = usable.compactMap { cached in
@@ -160,10 +184,10 @@ enum UsageCache {
             // credit balance overnight, which is the safer way to be wrong — one successful
             // refresh brings them straight back.
             let sameDay = Calendar.current.isDate(cached.fetchedAt, inSameDayAs: now)
+            let isClaude = isClaudeProviderID(cached.id)
             let items: [UsageItem] = cached.items.compactMap { item in
                 guard item.resetsAt != nil || sameDay else { return nil }
-                if let resetsAt = item.resetsAt, resetsAt <= now { return nil }
-                return UsageItem(
+                let restored = UsageItem(
                     label: item.label,
                     current: item.current,
                     limit: item.limit,
@@ -176,6 +200,12 @@ enum UsageCache {
                     pinKey: item.pinKey,
                     kind: item.isExtraUsage ? .extraUsage : .standard
                 )
+                // A Claude card keeps the row, as reset: an idle account's elapsed window means
+                // room is back, which is the point of showing it.
+                if let resetsAt = item.resetsAt, resetsAt <= now {
+                    return isClaude ? restored.markedReset() : nil
+                }
+                return restored
             }
             guard !items.isEmpty else { return nil }
             var restored = Provider(
@@ -184,7 +214,9 @@ enum UsageCache {
                 icon: cached.icon,
                 items: items,
                 status: .loaded,
-                planLabel: cached.planLabel
+                planLabel: cached.planLabel,
+                accountLabel: cached.accountLabel,
+                accountUuid: cached.accountUuid
             )
             // Carried so that a restored reading kept across later failed refreshes still ages
             // out in memory, instead of living on screen for as long as the app stays open.

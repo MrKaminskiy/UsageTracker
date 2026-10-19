@@ -202,3 +202,33 @@ struct ClaudeKeychainExistenceTests {
         #expect(!ClaudeAccountDiscovery.keychainItemExists("x", tool: hung, timeout: 0.5))
     }
 }
+
+@Suite("Claude reading ownership")
+struct ClaudeReadingOwnershipTests {
+
+    private func account(_ id: String, uuid: String?) -> ClaudeAccount {
+        let dir = URL(fileURLWithPath: "/Users/test/\(id)")
+        return ClaudeAccount(
+            providerID: id, configDir: dir, keychainService: "s",
+            credentialsFile: dir.appendingPathComponent(".credentials.json"),
+            projectsDir: dir.appendingPathComponent("projects"),
+            email: nil, accountUuid: uuid, organizationUuid: nil, hasLogin: true
+        )
+    }
+
+    @Test("A reading for a folder that's no longer signed in isn't current")
+    func isCurrentDropsUndiscovered() {
+        let accounts = [account("claude", uuid: "U1")]
+        #expect(!ClaudeAccountDiscovery.isCurrent(providerID: "claude-aaaa1111", accountUuid: nil, accounts: accounts))
+        #expect(ClaudeAccountDiscovery.isCurrent(providerID: "codex", accountUuid: nil, accounts: accounts))
+        #expect(ClaudeAccountDiscovery.isCurrent(providerID: "claude", accountUuid: nil, accounts: accounts))
+    }
+
+    @Test("A reading from a different account than the folder now holds isn't current")
+    func isCurrentDropsOtherAccount() {
+        let accounts = [account("claude", uuid: "U9")]
+        #expect(!ClaudeAccountDiscovery.isCurrent(providerID: "claude", accountUuid: "U1", accounts: accounts))
+        #expect(ClaudeAccountDiscovery.isCurrent(providerID: "claude", accountUuid: "U1", accounts: [account("claude", uuid: "U1")]))
+        #expect(ClaudeAccountDiscovery.isCurrent(providerID: "claude", accountUuid: nil, accounts: accounts))
+    }
+}

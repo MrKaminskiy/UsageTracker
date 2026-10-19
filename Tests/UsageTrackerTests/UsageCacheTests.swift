@@ -14,7 +14,7 @@ struct UsageCacheRestoreTests {
     )!
 
     private func provider(
-        id: String = "claude",
+        id: String = "codex",
         fetchedAt: Date,
         items: [UsageCache.CachedItem]
     ) -> UsageCache.CachedProvider {
@@ -111,7 +111,7 @@ struct UsageCacheRestoreTests {
     @Test("Staleness is per provider: an old reading drops while a fresh one restores")
     func agesProvidersIndependently() {
         let snap = UsageCache.Snapshot(providers: [
-            provider(id: "claude", fetchedAt: now.addingTimeInterval(-(UsageCache.maxAge + 60)),
+            provider(id: "cursor", fetchedAt: now.addingTimeInterval(-(UsageCache.maxAge + 60)),
                      items: [item(resetsAt: now.addingTimeInterval(3600))]),
             provider(id: "codex", fetchedAt: now.addingTimeInterval(-120),
                      items: [item(resetsAt: now.addingTimeInterval(3600))])
@@ -219,9 +219,9 @@ struct UsageCacheMergeTests {
 
     @Test("Repeated failed refreshes cannot keep a reading alive past its max age")
     func repeatedFailuresStillExpire() {
-        let existing = [cached(id: "claude", fetchedAt: now.addingTimeInterval(-(UsageCache.maxAge + 60)))]
+        let existing = [cached(id: "codex", fetchedAt: now.addingTimeInterval(-(UsageCache.maxAge + 60)))]
 
-        let merged = UsageCache.merging([live(id: "claude", status: .loaded)],
+        let merged = UsageCache.merging([live(id: "codex", status: .loaded)],
                                         into: existing, freshlyFetched: [], now: now)
 
         #expect(merged.isEmpty)
@@ -355,7 +355,7 @@ struct CarriedForwardTests {
 
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func provider(id: String = "claude",
+    private func provider(id: String = "codex",
                           fetchedAt: Date?,
                           resetsAt: Date?) -> Provider {
         var p = Provider(
@@ -372,7 +372,7 @@ struct CarriedForwardTests {
     func skipsFreshProviders() {
         let existing = [provider(fetchedAt: now, resetsAt: now.addingTimeInterval(3600))]
 
-        #expect(AppState.carriedForward(existing, excluding: ["claude"], now: now).isEmpty)
+        #expect(AppState.carriedForward(existing, excluding: ["codex"], now: now).isEmpty)
     }
 
     @Test("A recent reading is carried forward when its provider failed")
@@ -472,5 +472,161 @@ struct CacheFreshnessEdgeTests {
 
         #expect(restored?.providers.map(\.id) == ["claude"])
         #expect(restored?.savedAt == older)
+    }
+}
+
+@Suite("UsageCache Claude accounts")
+struct UsageCacheClaudeAccountTests {
+
+    private let now = Calendar.current.date(
+        bySettingHour: 12, minute: 0, second: 0,
+        of: Date(timeIntervalSince1970: 1_800_000_000)
+    )!
+
+    private func cached(
+        id: String = "claude",
+        fetchedAt: Date,
+        resetsAt: Date?,
+        accountUuid: String? = nil
+    ) -> UsageCache.CachedProvider {
+        UsageCache.CachedProvider(
+            id: id, name: "Claude", icon: "brain", fetchedAt: fetchedAt,
+            items: [UsageCache.CachedItem(
+                label: "Weekly", current: 40, limit: 100, resetLabel: nil,
+                resetsAt: resetsAt, pinKey: nil, isExtraUsage: false
+            )],
+            planLabel: nil, accountLabel: "b@x", accountUuid: accountUuid
+        )
+    }
+
+    private func account(_ id: String, uuid: String?) -> ClaudeAccount {
+        let dir = URL(fileURLWithPath: "/Users/test/\(id)")
+        return ClaudeAccount(
+            providerID: id, configDir: dir, keychainService: "s",
+            credentialsFile: dir.appendingPathComponent(".credentials.json"),
+            projectsDir: dir.appendingPathComponent("projects"),
+            email: nil, accountUuid: uuid, organizationUuid: nil, hasLogin: true
+        )
+    }
+
+    @Test("A Claude row whose window has reset restores as a reset row, not its old percentage")
+    func claudePastResetRestoresAsReset() throws {
+        let snap = UsageCache.Snapshot(providers: [
+            cached(fetchedAt: now.addingTimeInterval(-2 * 3600), resetsAt: now.addingTimeInterval(-3600))
+        ])
+        let item = try #require(UsageCache.restore(snap, now: now)?.providers.first?.items.first)
+        #expect(item.percentage == 0)
+        #expect(item.resetLabel == "reset")
+    }
+
+    @Test("A second account's ID gets the same reset treatment")
+    func extraAccountIDIsTreatedAsClaude() throws {
+        let snap = UsageCache.Snapshot(providers: [
+            cached(id: "claude-2601a85c", fetchedAt: now.addingTimeInterval(-2 * 3600), resetsAt: now.addingTimeInterval(-3600))
+        ])
+        let item = try #require(UsageCache.restore(snap, now: now)?.providers.first?.items.first)
+        #expect(item.resetLabel == "reset")
+    }
+
+    @Test("Other providers still drop a row whose window has reset")
+    func otherProviderPastResetStillDropped() {
+        let snap = UsageCache.Snapshot(providers: [
+            cached(id: "codex", fetchedAt: now.addingTimeInterval(-2 * 3600), resetsAt: now.addingTimeInterval(-3600))
+        ])
+        #expect(UsageCache.restore(snap, now: now) == nil)
+    }
+
+    @Test("An idle Claude reading is kept for days; other providers still retire after 24h")
+    func claudeKeptThreeDays() {
+        let snap = UsageCache.Snapshot(providers: [
+            cached(fetchedAt: now.addingTimeInterval(-3 * 86400), resetsAt: now.addingTimeInterval(2 * 86400)),
+            cached(id: "codex", fetchedAt: now.addingTimeInterval(-25 * 3600), resetsAt: now.addingTimeInterval(86400))
+        ])
+        #expect(UsageCache.restore(snap, now: now)?.providers.map(\.id) == ["claude"])
+    }
+
+    @Test("A Claude reading is retired after 30 days")
+    func claudeRetiredAfterThirtyDays() {
+        let snap = UsageCache.Snapshot(providers: [
+            cached(fetchedAt: now.addingTimeInterval(-31 * 86400), resetsAt: now.addingTimeInterval(86400))
+        ])
+        #expect(UsageCache.restore(snap, now: now) == nil)
+    }
+
+    @Test("A cache file written by 1.5.1 still decodes")
+    func decodes151Cache() throws {
+        let json = #"{"providers":[{"id":"claude","name":"Claude","icon":"brain","fetchedAt":"2027-01-15T10:00:00Z","items":[{"label":"Weekly","current":40,"limit":100,"resetsAt":"2027-01-17T10:00:00Z","isExtraUsage":false}],"planLabel":"Max"}]}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snap = try decoder.decode(UsageCache.Snapshot.self, from: Data(json.utf8))
+        #expect(snap.providers.first?.accountUuid == nil)
+        #expect(snap.providers.first?.accountLabel == nil)
+    }
+
+    @Test("The account a reading belongs to survives save and restore")
+    func accountFieldsRoundTrip() throws {
+        var provider = Provider(
+            id: "claude-2601a85c", name: "Claude", icon: "brain",
+            items: [UsageItem(label: "Weekly", current: 40, limit: 100, resetLabel: "2d",
+                              resetsAt: now.addingTimeInterval(2 * 86400))],
+            status: .loaded
+        )
+        provider.accountLabel = "b@x"
+        provider.accountUuid = "U2"
+        let merged = UsageCache.merging([provider], into: [], freshlyFetched: [provider.id], now: now)
+        let restored = try #require(UsageCache.restore(UsageCache.Snapshot(providers: merged), now: now)?.providers.first)
+        #expect(restored.accountLabel == "b@x")
+        #expect(restored.accountUuid == "U2")
+    }
+
+    @Test("A logged-out or re-signed-in account's reading is pruned from disk")
+    func mergingPrunesStaleAccounts() {
+        let stored = [
+            cached(id: "claude-aaaa1111", fetchedAt: now.addingTimeInterval(-3600), resetsAt: now.addingTimeInterval(86400)),
+            cached(id: "claude", fetchedAt: now.addingTimeInterval(-3600), resetsAt: now.addingTimeInterval(86400), accountUuid: "U1"),
+            cached(id: "codex", fetchedAt: now.addingTimeInterval(-3600), resetsAt: now.addingTimeInterval(86400))
+        ]
+        let kept = UsageCache.merging([], into: stored, freshlyFetched: [], now: now, accounts: [account("claude", uuid: "U9")])
+        #expect(kept.map(\.id) == ["codex"])
+    }
+}
+
+@Suite("Carry-forward for Claude accounts")
+@MainActor
+struct CarryForwardClaudeTests {
+
+    private let now = Calendar.current.date(
+        bySettingHour: 12, minute: 0, second: 0,
+        of: Date(timeIntervalSince1970: 1_800_000_000)
+    )!
+
+    private func claude(fetchedAt: Date, item: UsageItem) -> Provider {
+        var provider = Provider(id: "claude", name: "Claude", icon: "brain", items: [item], status: .loaded)
+        provider.fetchedAt = fetchedAt
+        return provider
+    }
+
+    @Test("An idle Claude reading carries forward past 24h, its elapsed rows marked reset")
+    func carriedForwardMarksClaudeReset() throws {
+        let existing = [claude(
+            fetchedAt: now.addingTimeInterval(-30 * 3600),
+            item: UsageItem(label: "Session", current: 70, limit: 100, resetLabel: "1h",
+                            resetsAt: now.addingTimeInterval(-3600))
+        )]
+        let item = try #require(AppState.carriedForward(existing, excluding: [], now: now).first?.items.first)
+        #expect(item.percentage == 0)
+        #expect(item.resetLabel == "reset")
+    }
+
+    @Test("Carrying an already-reset row again leaves it reset")
+    func markedResetIsStable() throws {
+        let reset = UsageItem(label: "Session", current: 70, limit: 100, resetLabel: "1h",
+                              resetsAt: now.addingTimeInterval(-3600)).markedReset()
+        let once = AppState.carriedForward([claude(fetchedAt: now.addingTimeInterval(-3600), item: reset)],
+                                           excluding: [], now: now)
+        let twice = AppState.carriedForward(once, excluding: [], now: now)
+        let item = try #require(twice.first?.items.first)
+        #expect(item.percentage == 0)
+        #expect(item.resetLabel == "reset")
     }
 }

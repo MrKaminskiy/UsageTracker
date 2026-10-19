@@ -22,6 +22,19 @@ struct UsageItem: Identifiable, Equatable {
         guard limit > 0 else { return 0 }
         return (current / limit) * 100
     }
+
+    /// This row once its window has reset since the reading was taken: nothing used yet as far
+    /// as we know, labeled so. Keeps `resetsAt`, so carrying it again changes nothing.
+    func markedReset() -> UsageItem {
+        UsageItem(label: label, current: 0, limit: limit, resetLabel: "reset",
+                  resetsAt: resetsAt, pinKey: pinKey, kind: kind)
+    }
+}
+
+/// Every Claude account card: the default `claude`, plus `claude-<hash>` for each other Claude
+/// Code config folder (see `ClaudeAccountDiscovery`).
+func isClaudeProviderID(_ id: String) -> Bool {
+    id == "claude" || id.hasPrefix("claude-")
 }
 
 enum ProviderStatus: Equatable {
@@ -97,7 +110,7 @@ func httpErrorMessage(_ statusCode: Int) -> String {
 
 struct Provider: Identifiable, Equatable {
     let id: String
-    let name: String
+    var name: String
     let icon: String
     var items: [UsageItem]
     var status: ProviderStatus
@@ -112,6 +125,8 @@ struct Provider: Identifiable, Equatable {
     var fetchedAt: Date? = nil
     var codexInsights: CodexInsights? = nil  // local CLI activity and account details (Codex only)
     var productShares: [UsageShare] = []     // this week's usage split by product (Claude only)
+    var accountLabel: String? = nil          // the account's email, or its config folder name (Claude only)
+    var accountUuid: String? = nil           // which account the reading belongs to (Claude only)
 
     var maxPercentage: Double {
         items.map(\.percentage).max() ?? 0
@@ -136,6 +151,9 @@ struct AppConfig: Codable {
     var contextAlertEnabled: Bool? = nil        // nil → on by default
     var contextAlertThresholdK: Int? = nil      // threshold in thousands of tokens; nil → 150
     var pinnedItem: PinnedItem? = nil
+    /// Names the user gave Claude accounts in Settings, by provider ID. Optional so older
+    /// config files decode.
+    var claudeAccountNames: [String: String]? = nil
     var enabledProviders: [String: Bool] = [
         "claude": true,
         "cursor": true,

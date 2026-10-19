@@ -105,3 +105,23 @@ struct AppConfigTests {
         #expect(decoded.shouldShowExtraUsageInPopover)
     }
 }
+
+@Suite("Claude provider IDs")
+struct ClaudeProviderIDTests {
+
+    @Test("Claude IDs are the default and claude-<hash>, nothing else")
+    func claudeIDs() {
+        #expect(isClaudeProviderID("claude"))
+        #expect(isClaudeProviderID("claude-2601a85c"))
+        #expect(!isClaudeProviderID("codex"))
+        #expect(!isClaudeProviderID("claudette"))
+    }
+
+    @Test("A config.json written by 1.5.1 decodes with no account names")
+    func decodes151Config() throws {
+        let json = #"{"refreshIntervalMinutes":5,"launchAtLogin":false,"hideNotConnected":true,"hasCompletedOnboarding":true,"showCostEstimate":false,"pinnedItem":{"providerId":"claude","itemLabel":"Weekly"},"enabledProviders":{"claude":true,"codex":true},"providerOrder":["claude","cursor","codex"]}"#
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+        #expect(config.claudeAccountNames == nil)
+        #expect(config.pinnedItem == PinnedItem(providerId: "claude", itemLabel: "Weekly"))
+    }
+}

@@ -438,16 +438,18 @@ class AppState: ObservableObject {
         existing.compactMap { provider in
             guard !fresh.contains(provider.id) else { return nil }
             if let fetchedAt = provider.fetchedAt,
-               now.timeIntervalSince(fetchedAt) > UsageCache.maxAge { return nil }
+               now.timeIntervalSince(fetchedAt) > UsageCache.maxAge(forProviderID: provider.id) { return nil }
 
             // Same calendar-day rule the disk restore applies: a figure scoped to a period it
             // can't express as a deadline ("$1.20 today") must not outlive that period just
             // because the app happened to stay open across midnight.
             let sameDay = provider.fetchedAt.map { Calendar.current.isDate($0, inSameDayAs: now) } ?? true
 
+            let isClaude = isClaudeProviderID(provider.id)
             var carried = provider
             carried.items = provider.items.compactMap { item in
-                if let resetsAt = item.resetsAt, resetsAt <= now { return nil }
+                // An idle Claude account's elapsed window stays on its card, as reset.
+                if let resetsAt = item.resetsAt, resetsAt <= now { return isClaude ? item.markedReset() : nil }
                 guard item.resetsAt != nil else { return sameDay ? item : nil }
                 return UsageItem(
                     label: item.label,

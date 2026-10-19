@@ -130,6 +130,16 @@ enum ClaudeAccountDiscovery {
         return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
     }
 
+    /// Whether a reading kept from earlier still belongs on its card: the card's folder is still
+    /// signed in, to the same account the reading was taken from. Unknown uuids pass, since an
+    /// older cache entry or a folder without `.claude.json` can't say. Non-Claude IDs always pass.
+    static func isCurrent(providerID: String, accountUuid: String?, accounts: [ClaudeAccount]) -> Bool {
+        guard isClaudeProviderID(providerID) else { return true }
+        guard let account = accounts.first(where: { $0.providerID == providerID }) else { return false }
+        if let stored = accountUuid, let current = account.accountUuid, stored != current { return false }
+        return true
+    }
+
     /// Whether the keychain holds an item for `service`. Runs `security` without `-w`: that
     /// reads only the item's attributes, never its secret, so it can't prompt.
     static func keychainItemExists(

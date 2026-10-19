@@ -238,12 +238,19 @@ actor ClaudeInsightsAnalyzer {
 
     private var fileCache: [String: FileSummary] = [:]
 
-    func analyze(projectsDir: URL? = nil, now: Date = Date(),
+    /// `additionalProjectsDirs` are other Claude Code config folders' transcripts. A folder that
+    /// is a symlink to one already listed (the usual shared setup) is read once.
+    func analyze(projectsDir: URL? = nil, additionalProjectsDirs: [URL] = [], now: Date = Date(),
                  activeRecency: TimeInterval = activeRecencyWindow) async -> ClaudeInsights? {
-        let resolvedDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
+        let primaryDir = projectsDir ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
+        var seen = Set<String>()
+        let dirs = ([primaryDir] + additionalProjectsDirs).filter { dir in
+            FileManager.default.fileExists(atPath: dir.path)
+                && seen.insert(dir.resolvingSymlinksInPath().path).inserted
+        }
 
-        guard FileManager.default.fileExists(atPath: resolvedDir.path) else { return nil }
+        guard !dirs.isEmpty else { return nil }
 
         let calendar = Calendar.current
         guard let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) else {
@@ -255,9 +262,9 @@ actor ClaudeInsightsAnalyzer {
         // A file not touched since before both cutoffs can contribute nothing.
         let walkCutoff = min(monthStart, recentCutoff)
 
-        let jsonlFiles: [(url: URL, modDate: Date, size: Int)] = {
+        let jsonlFiles: [(url: URL, modDate: Date, size: Int)] = dirs.flatMap { dir -> [(URL, Date, Int)] in
             guard let enumerator = FileManager.default.enumerator(
-                at: resolvedDir,
+                at: dir,
                 includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
                 options: [.skipsHiddenFiles]
             ) else { return [] }
@@ -271,7 +278,7 @@ actor ClaudeInsightsAnalyzer {
                 result.append((fileURL, modDate, size))
             }
             return result
-        }()
+        }
 
         var totalCost: Double = 0
         var recentEvents: [TranscriptEvent] = []

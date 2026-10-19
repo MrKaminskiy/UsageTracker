@@ -1,16 +1,42 @@
 import Foundation
 
+/// Usage for one Claude Code account (one config folder). `AppState` keeps one per account.
 actor ClaudeProvider {
-    private let keychainService = "Claude Code-credentials"
+    let account: ClaudeAccount
     private let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     private let refreshURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     private let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     private let scopes = "user:profile user:inference user:sessions:claude_code user:mcp_servers"
     static let refreshBufferMs: Double = 5 * 60 * 1000 // 5 minutes
     static let expiryGraceMs: Double = 30 * 1000 // 30 seconds
-    private let insightsAnalyzer = ClaudeInsightsAnalyzer()
     // Fallback for people who never installed the CLI and so have no OAuth token to read.
     private let webProvider = ClaudeWebProvider()
+
+    init(account: ClaudeAccount) {
+        self.account = account
+    }
+
+    /// Thrown when this account's login has expired and can't be renewed from here — the
+    /// keychain item is Claude Code's and read-only to us, so it renews only when Claude Code
+    /// next runs with this folder. The caller keeps the last reading if it has one, else shows
+    /// `fallback`.
+    struct LoginExpired: Error {
+        let fallback: Provider
+    }
+
+    static func expiredMessage(for account: ClaudeAccount) -> String {
+        let command = account.isDefault
+            ? "claude"
+            : "CLAUDE_CONFIG_DIR=\((account.configDir.path as NSString).abbreviatingWithTildeInPath) claude"
+        return "Token expired. Run `\(command)` to log in again."
+    }
+
+    private func provider(items: [UsageItem] = [], status: ProviderStatus) -> Provider {
+        var provider = Provider(id: account.providerID, name: "Claude", icon: "brain", items: items, status: status)
+        provider.accountLabel = account.label
+        provider.accountUuid = account.accountUuid
+        return provider
+    }
 
     // Credentials cached in memory so the keychain (which can prompt the user
     // for access after Claude Code's /login recreates the item) is only read
@@ -133,11 +159,11 @@ actor ClaudeProvider {
         }
     }
 
-    func fetchUsage() async throws -> Provider {
-        try await fetchUsage(retriesLeft: 2)
+    func fetchUsage(cookiePolicy: ClaudeWebProvider.CookiePolicy) async throws -> Provider {
+        try await fetchUsage(retriesLeft: 2, cookiePolicy: cookiePolicy)
     }
 
-    private func fetchUsage(retriesLeft: Int) async throws -> Provider {
+    private func fetchUsage(retriesLeft: Int, cookiePolicy: ClaudeWebProvider.CookiePolicy) async throws -> Provider {
         if let pending = pendingWriteBack {
             _ = persist(
                 pending.credentials.credentials,
@@ -149,14 +175,11 @@ actor ClaudeProvider {
         guard var loaded = loadCredentials() else {
             // No CLI credentials at all — the case of someone who only uses claude.ai in a
             // browser. Try the pasted session cookie before declaring Claude unavailable.
-            if let web = try await webProvider.fetchUsage() { return web }
-            return Provider(
-                id: "claude",
-                name: "Claude",
-                icon: "brain",
-                items: [],
-                status: .notConnected(url: settingsURL)
-            )
+            if cookiePolicy == .unrestricted,
+               let web = try await webProvider.fetchUsage(providerID: account.providerID, policy: cookiePolicy) {
+                return web
+            }
+            return provider(status: .notConnected(url: settingsURL))
         }
 
         // Claude Code refreshes the shared credentials on its own, and refreshing
@@ -180,13 +203,7 @@ actor ClaudeProvider {
         }
 
         guard let oauth = loaded.credentials.claudeAiOauth else {
-            return await webFallback(or: Provider(
-                id: "claude",
-                name: "Claude",
-                icon: "brain",
-                items: [],
-                status: .error("Invalid credentials")
-            ))
+            return await webUsage(cookiePolicy) ?? provider(status: .error("Invalid credentials"))
         }
 
         // Fetch usage
@@ -205,24 +222,12 @@ actor ClaudeProvider {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            return await webFallback(or: Provider(
-                id: "claude",
-                name: "Claude",
-                icon: "brain",
-                items: [],
-                status: .error("Invalid response")
-            ))
+            return await webUsage(cookiePolicy) ?? provider(status: .error("Invalid response"))
         }
 
         if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-            let expiredProvider = Provider(
-                id: "claude",
-                name: "Claude",
-                icon: "brain",
-                items: [],
-                status: .error("Token expired. Run `claude` to log in again.")
-            )
-            guard retriesLeft > 0 else { return await webFallback(or: expiredProvider) }
+            let expiredProvider = provider(status: .error(Self.expiredMessage(for: account)))
+            guard retriesLeft > 0 else { return try await webUsageOrExpired(cookiePolicy, expiredProvider) }
 
             // The token may have been rotated behind our back (e.g. /login in
             // Claude Code recreates the keychain item) — re-read the store and
@@ -232,19 +237,19 @@ actor ClaudeProvider {
                 if let newOauth = reloaded.credentials.claudeAiOauth,
                    newOauth.accessToken != oauth.accessToken,
                    !Self.isExpired(newOauth) {
-                    return try await fetchUsage(retriesLeft: retriesLeft - 1)
+                    return try await fetchUsage(retriesLeft: retriesLeft - 1, cookiePolicy: cookiePolicy)
                 }
             }
             // Fall back to refreshing the token ourselves, then retry — but only for a
             // store we may write back to. Refreshing rotates the refresh token, so doing
             // it against the read-only shared keychain would cost Claude Code a `/login`.
-            guard loaded.source.isWritable else { return await webFallback(or: expiredProvider) }
+            guard loaded.source.isWritable else { return try await webUsageOrExpired(cookiePolicy, expiredProvider) }
             let spent = loaded.credentials.claudeAiOauth?.refreshToken
             if let refreshed = await refreshedCredentials(from: loaded.credentials) {
                 _ = persist(refreshed, into: loaded, replacing: spent)
-                return try await fetchUsage(retriesLeft: retriesLeft - 1)
+                return try await fetchUsage(retriesLeft: retriesLeft - 1, cookiePolicy: cookiePolicy)
             }
-            return await webFallback(or: expiredProvider)
+            return try await webUsageOrExpired(cookiePolicy, expiredProvider)
         }
 
         guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
@@ -253,13 +258,7 @@ actor ClaudeProvider {
             if isTransientHTTPStatus(httpResponse.statusCode) {
                 throw URLError(.init(rawValue: httpResponse.statusCode))
             }
-            return await webFallback(or: Provider(
-                id: "claude",
-                name: "Claude",
-                icon: "brain",
-                items: [],
-                status: .error(httpErrorMessage(httpResponse.statusCode))
-            ))
+            return await webUsage(cookiePolicy) ?? provider(status: .error(httpErrorMessage(httpResponse.statusCode)))
         }
 
         let usage = try JSONDecoder().decode(UsageResponse.self, from: data)
@@ -269,29 +268,30 @@ actor ClaudeProvider {
         let detector = Claude2xDetector.loadFromDisk()
         let boostStatus = detector.status()
 
-        // Cost estimation + local usage insights (caller controls cost visibility via showCostEstimate)
-        let insights = await insightsAnalyzer.analyze()
-
-        return Provider(
-            id: "claude",
-            name: "Claude",
-            icon: "brain",
-            items: items,
-            status: items.isEmpty ? .error("No usage data") : .loaded,
-            boostStatus: boostStatus,
-            costEstimate: insights?.monthlyCost,
-            planLabel: Self.planLabel(from: oauth.subscriptionType),
-            insights: insights,
-            productShares: Self.productShares(from: usage)
-        )
+        // Cost estimate and transcript insights are shared by every account on this Mac, so
+        // AppState computes them once rather than each account's fetch.
+        var result = provider(items: items, status: items.isEmpty ? .error("No usage data") : .loaded)
+        result.boostStatus = boostStatus
+        result.planLabel = Self.planLabel(from: oauth.subscriptionType)
+        result.productShares = Self.productShares(from: usage)
+        return result
     }
 
     /// Falls back to the browser cookie when the CLI credentials are present but unusable
-    /// (stale, malformed, or rejected). Only a web result with actual rows wins — otherwise
-    /// the original CLI error is the more accurate thing to show the user.
-    private func webFallback(or failure: Provider) async -> Provider {
-        guard let web = try? await webProvider.fetchUsage(), !web.items.isEmpty else { return failure }
+    /// (stale, malformed, or rejected), if `policy` lets the cookie fill in for this account.
+    /// Only a web result with actual rows wins — otherwise the original CLI error is the more
+    /// accurate thing to show the user.
+    private func webUsage(_ policy: ClaudeWebProvider.CookiePolicy) async -> Provider? {
+        guard var web = try? await webProvider.fetchUsage(providerID: account.providerID, policy: policy),
+              !web.items.isEmpty else { return nil }
+        web.accountLabel = account.label
+        web.accountUuid = account.accountUuid
         return web
+    }
+
+    private func webUsageOrExpired(_ policy: ClaudeWebProvider.CookiePolicy, _ expired: Provider) async throws -> Provider {
+        if let web = await webUsage(policy) { return web }
+        throw LoginExpired(fallback: expired)
     }
 
     private func loadCredentials(forceReload: Bool = false) -> LoadedCredentials? {
@@ -299,7 +299,7 @@ actor ClaudeProvider {
            !Self.needsRefresh(cached.credentials.claudeAiOauth) {
             return cached
         }
-        let loaded = read(from: .keychain) ?? read(from: .file(credentialsFileURL()))
+        let loaded = read(from: .keychain) ?? read(from: .file(account.credentialsFile))
         cachedCredentials = loaded
         return loaded
     }
@@ -321,11 +321,6 @@ actor ClaudeProvider {
         return (credentials, raw)
     }
 
-    private func credentialsFileURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/.credentials.json")
-    }
-
     // Read through /usr/bin/security, the tool Claude Code itself reads and writes the item
     // with, never through SecItemCopyMatching. Every token refresh Claude Code writes makes
     // macOS reset the item's partition list to `apple-tool:` alone, which evicts any
@@ -334,7 +329,7 @@ actor ClaudeProvider {
     // teamid:… ACL (apple-tool:)"). The security tool is always on that list, so this read
     // never prompts.
     private func loadFromKeychain() -> (credentials: Credentials, raw: [String: Any])? {
-        Self.readGenericPassword(service: keychainService).flatMap(decode)
+        Self.readGenericPassword(service: account.keychainService).flatMap(decode)
     }
 
     static func readGenericPassword(

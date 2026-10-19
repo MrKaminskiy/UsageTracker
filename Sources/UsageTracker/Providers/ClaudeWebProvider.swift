@@ -47,23 +47,57 @@ actor ClaudeWebProvider {
         return value.hasPrefix("sk-ant-") ? value : nil
     }
 
-    /// Fetches usage via the browser session.
-    ///
-    /// Returns nil when no cookie is configured, so the caller can fall back to its own
-    /// "not connected" state rather than reporting a failure the user did not cause.
-    func fetchUsage() async throws -> Provider? {
-        guard let key = sessionKey() else { return nil }
+    /// Where the one pasted cookie may fill in. It belongs to whichever account was signed in
+    /// to claude.ai in the browser, which need not be any Claude Code account here — so it must
+    /// never put one account's usage on another account's card.
+    enum CookiePolicy: Equatable, Sendable {
+        /// No Claude Code login anywhere: the cookie is the only source and can't collide.
+        case unrestricted
+        /// Only if claude.ai confirms the cookie is this account, and then only its organization.
+        /// Matching the organization alone isn't enough: Team seats share one.
+        case requireAccount(accountUuid: String, organizationUuid: String?)
+        case disabled
+    }
 
-        let organizationIDs: [String]
-        do {
-            organizationIDs = try await fetchOrganizationIDs(key: key)
-        } catch let error as ExpiredSession {
-            _ = error
-            return expired()
+    static func cookiePolicy(for account: ClaudeAccount, anyAccountSignedIn: Bool) -> CookiePolicy {
+        if account.hasLogin, let uuid = account.accountUuid {
+            return .requireAccount(accountUuid: uuid, organizationUuid: account.organizationUuid)
+        }
+        if account.isDefault && !account.hasLogin && !anyAccountSignedIn { return .unrestricted }
+        return .disabled
+    }
+
+    /// The signed-in account's uuid from claude.ai's `/api/account`.
+    static func accountUuid(fromAccountResponse data: Data) -> String? {
+        ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["uuid"] as? String
+    }
+
+    /// Fetches usage via the browser session, as the card `providerID`.
+    ///
+    /// Returns nil when no cookie is configured or `policy` doesn't let it fill in, so the caller
+    /// can fall back to its own state rather than reporting a failure the user did not cause.
+    func fetchUsage(providerID: String, policy: CookiePolicy) async throws -> Provider? {
+        guard policy != .disabled, let key = sessionKey() else { return nil }
+
+        var organizationIDs: [String] = []
+        if case .requireAccount(let accountUuid, let organizationUuid) = policy {
+            // Can't confirm whose cookie this is (expired, offline, other account): it fills in
+            // for nobody.
+            guard let data = try? await data(for: request("/account", key: key)),
+                  Self.accountUuid(fromAccountResponse: data) == accountUuid else { return nil }
+            organizationIDs = organizationUuid.map { [$0] } ?? []
+        }
+        if organizationIDs.isEmpty {
+            do {
+                organizationIDs = try await fetchOrganizationIDs(key: key)
+            } catch let error as ExpiredSession {
+                _ = error
+                return expired(providerID)
+            }
         }
         guard !organizationIDs.isEmpty else {
             return Provider(
-                id: "claude", name: "Claude", icon: "brain",
+                id: providerID, name: "Claude", icon: "brain",
                 items: [], status: .error("No organizations")
             )
         }
@@ -77,12 +111,12 @@ actor ClaudeWebProvider {
                 usage = try await fetchUsage(orgID: orgID, key: key)
             } catch let error as ExpiredSession {
                 _ = error
-                return expired()
+                return expired(providerID)
             }
             let items = ClaudeProvider.usageItems(from: usage)
             if !items.isEmpty {
                 return Provider(
-                    id: "claude", name: "Claude", icon: "brain",
+                    id: providerID, name: "Claude", icon: "brain",
                     items: items,
                     status: .loaded,
                     boostStatus: Claude2xDetector.loadFromDisk().status(),
@@ -92,7 +126,7 @@ actor ClaudeWebProvider {
         }
 
         return Provider(
-            id: "claude", name: "Claude", icon: "brain",
+            id: providerID, name: "Claude", icon: "brain",
             items: [], status: .error("No usage data")
         )
     }
@@ -103,9 +137,9 @@ actor ClaudeWebProvider {
     /// instead of a generic HTTP error.
     private struct ExpiredSession: Error {}
 
-    private func expired() -> Provider {
+    private func expired(_ providerID: String) -> Provider {
         Provider(
-            id: "claude", name: "Claude", icon: "brain",
+            id: providerID, name: "Claude", icon: "brain",
             items: [], status: .error("Session expired. Paste a new cookie")
         )
     }

@@ -74,7 +74,8 @@ class AppState: ObservableObject {
 
     let updateChecker = UpdateChecker()
 
-    private let claudeProvider = ClaudeProvider()
+    // TEMP (Task 3 build fix, replaced in Task 4): the default account only.
+    private let claudeProvider = ClaudeProvider(account: ClaudeAccountDiscovery.discover(home: FileManager.default.homeDirectoryForCurrentUser)[0])
     private let cursorProvider = CursorProvider()
     private let codexProvider = CodexProvider()
     private let elevenLabsProvider = ElevenLabsProvider()
@@ -157,7 +158,7 @@ class AppState: ObservableObject {
         async let contextAlert: Void = evaluateContextAlert()
 
         // Fetch from all providers concurrently
-        async let claudeResult = claudeProvider.fetchUsage()
+        async let claudeResult = fetchClaudeTemp()
         async let cursorResult = cursorProvider.fetchUsage()
         async let codexResult = codexProvider.fetchUsage()
         async let elevenLabsResult = elevenLabsProvider.fetchUsage()
@@ -166,7 +167,7 @@ class AppState: ObservableObject {
         async let openAIResult = openAIProvider.fetchUsage()
         async let openRouterResult = openRouterProvider.fetchUsage()
 
-        let claude = try? await claudeResult
+        let claude = await claudeResult
         let cursor = try? await cursorResult
         let codex = try? await codexResult
         let elevenLabs = try? await elevenLabsResult
@@ -249,6 +250,13 @@ class AppState: ObservableObject {
         UsageCache.save(newProviders, freshlyFetched: freshIDs)
         await contextAlert
         await updateChecker.check()
+    }
+
+    // TEMP (Task 3 build fix, replaced in Task 4).
+    private func fetchClaudeTemp() async -> Provider? {
+        do { return try await claudeProvider.fetchUsage(cookiePolicy: .unrestricted) }
+        catch let expired as ClaudeProvider.LoginExpired { return expired.fallback }
+        catch { return nil }
     }
 
     /// Fire a macOS notification when the active Claude chat's context crosses the configured

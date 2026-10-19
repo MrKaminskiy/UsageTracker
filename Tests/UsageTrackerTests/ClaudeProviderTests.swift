@@ -619,3 +619,25 @@ struct ClaudeProviderSecurityToolTests {
         #expect(Date().timeIntervalSince(start) < 10)
     }
 }
+
+@Suite("ClaudeProvider per-account messages")
+struct ClaudeProviderAccountMessageTests {
+
+    private func account(_ path: String, id: String) -> ClaudeAccount {
+        let dir = URL(fileURLWithPath: path)
+        return ClaudeAccount(
+            providerID: id, configDir: dir, keychainService: "s",
+            credentialsFile: dir.appendingPathComponent(".credentials.json"),
+            projectsDir: dir.appendingPathComponent("projects"),
+            email: nil, accountUuid: nil, organizationUuid: nil, hasLogin: true
+        )
+    }
+
+    @Test("An expired login names the command that signs that folder back in")
+    func expiredMessages() {
+        #expect(ClaudeProvider.expiredMessage(for: account("/Users/test/.claude", id: "claude"))
+                == "Token expired. Run `claude` to log in again.")
+        #expect(ClaudeProvider.expiredMessage(for: account("/Users/test/.claude-2", id: "claude-2601a85c"))
+                == "Token expired. Run `CLAUDE_CONFIG_DIR=/Users/test/.claude-2 claude` to log in again.")
+    }
+}

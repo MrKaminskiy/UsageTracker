@@ -429,3 +429,29 @@ struct ClaudeInsightsAnalyzeTests {
         #expect(abs((result?.monthlyCost ?? 0) - 3.0) < 0.01)
     }
 }
+
+@Suite("ClaudeInsightsAnalyzer across config folders")
+struct ClaudeInsightsMultiFolderTests {
+
+    @Test("A projects folder symlinked from a second config folder is counted once")
+    func symlinkedProjectsCountedOnce() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let projects = root.appendingPathComponent("a/projects")
+        let linked = root.appendingPathComponent("b-projects")
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: projects)
+
+        let now = ISO8601DateFormatter().date(from: "2027-01-15T12:00:00Z")!
+        let line = #"{"type":"assistant","timestamp":"2027-01-15T10:00:00.000Z","message":{"model":"claude-opus-4-6","role":"assistant","usage":{"input_tokens":1000000,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#
+        let file = projects.appendingPathComponent("s.jsonl")
+        try line.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-3600)], ofItemAtPath: file.path)
+
+        let alone = await ClaudeInsightsAnalyzer().analyze(projectsDir: projects, now: now)
+        let both = await ClaudeInsightsAnalyzer().analyze(projectsDir: projects, additionalProjectsDirs: [linked], now: now)
+
+        #expect((alone?.monthlyCost ?? 0) > 0)
+        #expect(both?.monthlyCost == alone?.monthlyCost)
+    }
+}

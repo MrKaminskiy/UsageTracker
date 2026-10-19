@@ -71,3 +71,40 @@ final class ClaudeWebProviderTests: XCTestCase {
         XCTAssertTrue(items.allSatisfy { $0.limit == 100 })
     }
 }
+
+import Testing
+
+@Suite("Claude cookie policy")
+struct ClaudeCookiePolicyTests {
+
+    private func account(_ id: String = "claude", uuid: String?, org: String? = nil, hasLogin: Bool) -> ClaudeAccount {
+        let dir = URL(fileURLWithPath: "/Users/test/.claude")
+        return ClaudeAccount(
+            providerID: id, configDir: dir, keychainService: "s",
+            credentialsFile: dir.appendingPathComponent(".credentials.json"),
+            projectsDir: dir.appendingPathComponent("projects"),
+            email: nil, accountUuid: uuid, organizationUuid: org, hasLogin: hasLogin
+        )
+    }
+
+    @Test("The cookie fills in only where it can't land on the wrong account")
+    func policyMatrix() {
+        #expect(ClaudeWebProvider.cookiePolicy(for: account(uuid: "U1", org: "O1", hasLogin: true), anyAccountSignedIn: true)
+                == .requireAccount(accountUuid: "U1", organizationUuid: "O1"))
+        #expect(ClaudeWebProvider.cookiePolicy(for: account(uuid: nil, hasLogin: false), anyAccountSignedIn: false)
+                == .unrestricted)
+        #expect(ClaudeWebProvider.cookiePolicy(for: account(uuid: nil, hasLogin: false), anyAccountSignedIn: true)
+                == .disabled)
+        #expect(ClaudeWebProvider.cookiePolicy(for: account(uuid: nil, hasLogin: true), anyAccountSignedIn: true)
+                == .disabled)
+        #expect(ClaudeWebProvider.cookiePolicy(for: account("claude-2601a85c", uuid: nil, hasLogin: false), anyAccountSignedIn: false)
+                == .disabled)
+    }
+
+    @Test("The cookie's account comes from /api/account's top-level uuid")
+    func accountUuidDecoding() {
+        #expect(ClaudeWebProvider.accountUuid(fromAccountResponse: Data(#"{"uuid":"U1","email_address":"a@x"}"#.utf8)) == "U1")
+        #expect(ClaudeWebProvider.accountUuid(fromAccountResponse: Data("{}".utf8)) == nil)
+        #expect(ClaudeWebProvider.accountUuid(fromAccountResponse: Data("<html>".utf8)) == nil)
+    }
+}

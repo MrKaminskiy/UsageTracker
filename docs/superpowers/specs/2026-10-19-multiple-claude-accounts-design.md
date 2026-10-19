@@ -81,15 +81,15 @@ unknown whether `/logout` revokes them server-side.
 ## Known facts and constraints
 
 - **Keychain naming.** The default config folder uses `Claude Code-credentials`. A custom
-  `CLAUDE_CONFIG_DIR` uses `Claude Code-credentials-<8 hex chars>`. **Not verified:** how the
-  suffix is derived. A likely guess is the first 8 hex of a SHA-256 of the config folder
-  path. The builder must pin it down and confirm it against the user's real `~/.claude-2`
-  login. The Claude Code binary (`~/.local/share/claude/versions/<v>`) stores strings
-  length-prefixed, so plain string search did not find the naming code.
+  `CLAUDE_CONFIG_DIR` uses `Claude Code-credentials-<first 8 hex chars of SHA-256 of the
+  folder path string>`. Verified 2026-10-19: Xcode's Claude agent folder
+  (`~/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig`) hashes to `bb641730`,
+  which matches an existing keychain item. The path is hashed exactly as given, so a
+  trailing slash changes the hash.
 - **Account identity.** The config file's `oauthAccount` object carries `emailAddress`,
   `accountUuid`, `organizationUuid`, `displayName`, and `organizationName`. For the default
   folder that file is `~/.claude.json`, outside `~/.claude`. For a custom folder it is
-  assumed to be `$CLAUDE_CONFIG_DIR/.claude.json`. **Not verified.**
+  `$CLAUDE_CONFIG_DIR/.claude.json`. Verified 2026-10-19 on Xcode's agent folder.
 - **File credentials.** Newer CLI versions may store credentials in
   `<config folder>/.credentials.json` instead of the keychain. `ClaudeProvider` already reads
   `~/.claude/.credentials.json`. Each folder follows the same rule. That file is the only

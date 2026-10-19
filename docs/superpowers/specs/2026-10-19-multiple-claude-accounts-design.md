@@ -107,8 +107,12 @@ unknown whether `/logout` revokes them server-side.
   - **No CLI login anywhere:** the cookie drives the `claude` card exactly as today. There is
     no other card it could leak into.
   - **CLI logins exist:** the cookie fills in only for the card whose account it belongs
-    to. A likely way to match is by org UUID, from `/api/organizations` against
-    `oauthAccount.organizationUuid`. If the app can't tell, it fills in for no card.
+    to. The match must be on the **account** (`oauthAccount.accountUuid`), not the
+    organization. Two accounts can share one Team organization while having separate
+    limits, so an org match alone would still let one account's numbers land on the other's
+    card. Once the account matches, pick that card's organization explicitly. If the app
+    can't verify the account, it fills in for no card. **Not verified:** which claude.ai
+    endpoint returns the signed-in account's UUID for a cookie.
   - **The cookie's account has no folder, but other folders do:** ignore the cookie; it gets
     no card of its own. This isn't a regression, since today that cookie only appears as the
     cross-account fallback this design forbids.

@@ -155,6 +155,11 @@ class AppState: ObservableObject {
     }
 
     func refresh() async {
+        // One refresh at a time. Opening the popover starts one while the launch refresh can still
+        // be waiting on the transcript scan; the later one carries forward readings it took before
+        // the earlier one finished and publishes them last, putting stale numbers back on screen —
+        // and it polls the rate-limited usage endpoint a second time for every account.
+        guard !isLoading else { return }
         Log.info("Refreshing providers...")
         isLoading = true
         defer { isLoading = false }

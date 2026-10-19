@@ -74,8 +74,12 @@ class AppState: ObservableObject {
 
     let updateChecker = UpdateChecker()
 
-    // TEMP (Task 3 build fix, replaced in Task 4): the default account only.
-    private let claudeProvider = ClaudeProvider(account: ClaudeAccountDiscovery.discover(home: FileManager.default.homeDirectoryForCurrentUser)[0])
+    /// One provider per Claude Code account, rebuilt when the account behind a folder changes.
+    private var claudeProviders: [String: (account: ClaudeAccount, provider: ClaudeProvider)] = [:]
+    // Cost and transcript insights are shared by every Claude account on this Mac, so they are
+    // computed once per refresh, independently of whether any account's usage request worked.
+    // One analyzer across refreshes keeps its per-file cache warm.
+    private let claudeInsightsAnalyzer = ClaudeInsightsAnalyzer()
     private let cursorProvider = CursorProvider()
     private let codexProvider = CodexProvider()
     private let elevenLabsProvider = ElevenLabsProvider()
@@ -136,7 +140,7 @@ class AppState: ObservableObject {
         // away at best, and the Claude usage endpoint rate-limits hard enough that it can be
         // minutes — an empty popover for that whole stretch reads as "broken", not "loading".
         if let cached = UsageCache.load() {
-            providers = cached.providers
+            providers = applyingDisplayNames(cached.providers)
             lastUpdated = cached.savedAt
             Log.info("Restored \(cached.providers.count) providers from cache (saved \(cached.savedAt))")
         }
@@ -158,7 +162,16 @@ class AppState: ObservableObject {
         async let contextAlert: Void = evaluateContextAlert()
 
         // Fetch from all providers concurrently
-        async let claudeResult = fetchClaudeTemp()
+        // Discovery spawns `security` once per config folder; keep it off the main actor.
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let accounts = await Task.detached { ClaudeAccountDiscovery.discover(home: home) }.value
+        let fetchers = claudeFetchers(for: accounts)
+        let anyAccountSignedIn = accounts.contains { $0.hasLogin }
+        async let claudeOutcomes = Self.fetchClaude(fetchers, anyAccountSignedIn: anyAccountSignedIn)
+        async let claudeInsights = claudeInsightsAnalyzer.analyze(
+            projectsDir: accounts[0].projectsDir,
+            additionalProjectsDirs: accounts.dropFirst().map(\.projectsDir)
+        )
         async let cursorResult = cursorProvider.fetchUsage()
         async let codexResult = codexProvider.fetchUsage()
         async let elevenLabsResult = elevenLabsProvider.fetchUsage()
@@ -167,7 +180,10 @@ class AppState: ObservableObject {
         async let openAIResult = openAIProvider.fetchUsage()
         async let openRouterResult = openRouterProvider.fetchUsage()
 
-        let claude = await claudeResult
+        let previous = providers
+        let claude: [(id: String, provider: Provider?)] = await claudeOutcomes.map { outcome in
+            (outcome.id, Self.resolveClaudeResult(outcome.result, previous: previous.first { $0.id == outcome.id }))
+        }
         let cursor = try? await cursorResult
         let codex = try? await codexResult
         let elevenLabs = try? await elevenLabsResult
@@ -178,8 +194,10 @@ class AppState: ObservableObject {
 
         var newProviders: [Provider] = []
 
-        let results: [(name: String, id: String, provider: Provider?)] = [
-            ("Claude", "claude", claude), ("Cursor", "cursor", cursor), ("Codex", "codex", codex),
+        let results: [(name: String, id: String, provider: Provider?)] = claude.map {
+            ($0.id == "claude" ? "Claude" : "Claude \($0.id)", $0.id, $0.provider)
+        } + [
+            ("Cursor", "cursor", cursor), ("Codex", "codex", codex),
             ("ElevenLabs", "elevenlabs", elevenLabs), ("Stability", "stability", stability),
             ("Runway", "runway", runway), ("OpenAI", "openai", openAI), ("OpenRouter", "openrouter", openRouter)
         ]
@@ -213,6 +231,20 @@ class AppState: ObservableObject {
             now: refreshedAt
         ))
 
+        // A Claude card whose folder signed out, or now holds another account, goes away.
+        newProviders.removeAll {
+            !ClaudeAccountDiscovery.isCurrent(providerID: $0.id, accountUuid: $0.accountUuid, accounts: accounts)
+        }
+        newProviders = Self.attachingClaudeInsights(await claudeInsights, to: newProviders, accounts: accounts)
+
+        // New accounts join the order right after Claude, switched on, before anything below
+        // reads `enabledProviders`.
+        let withAccounts = Self.addingClaudeAccounts(accounts.map(\.providerID), to: config)
+        if withAccounts.providerOrder != config.providerOrder || withAccounts.enabledProviders != config.enabledProviders {
+            config = withAccounts
+            saveConfig()
+        }
+
         // Distinguish "rate-limited / unreachable" from "not signed in": a provider that threw
         // (nil result) with no data to fall back on is a transient failure, whereas a
         // .notConnected status means genuinely signed out.
@@ -231,7 +263,7 @@ class AppState: ObservableObject {
             }
         }
 
-        providers = newProviders
+        providers = applyingDisplayNames(newProviders)
         Log.info("Refresh complete — \(newProviders.count) providers loaded")
         // The footer sits under the usage rows, so it has to mean "these numbers are current".
         // A provider answering `.notConnected` or `.error` is a fresh answer but not a fresh
@@ -247,16 +279,136 @@ class AppState: ObservableObject {
         // Persisted after the cost-estimate strip above, so a snapshot never carries a figure
         // the user has chosen not to see. Only providers that actually answered this cycle are
         // rewritten; the rest keep the reading — and the age — they already had on disk.
-        UsageCache.save(newProviders, freshlyFetched: freshIDs)
+        UsageCache.save(newProviders, freshlyFetched: freshIDs, accounts: accounts)
         await contextAlert
         await updateChecker.check()
     }
 
-    // TEMP (Task 3 build fix, replaced in Task 4).
-    private func fetchClaudeTemp() async -> Provider? {
-        do { return try await claudeProvider.fetchUsage(cookiePolicy: .unrestricted) }
-        catch let expired as ClaudeProvider.LoginExpired { return expired.fallback }
-        catch { return nil }
+    private func claudeFetchers(for accounts: [ClaudeAccount]) -> [(account: ClaudeAccount, provider: ClaudeProvider)] {
+        claudeProviders = Dictionary(uniqueKeysWithValues: accounts.map { account in
+            if let existing = claudeProviders[account.providerID], existing.account == account {
+                return (account.providerID, existing)
+            }
+            return (account.providerID, (account, ClaudeProvider(account: account)))
+        })
+        return accounts.compactMap { claudeProviders[$0.providerID] }
+    }
+
+    /// Every account's usage, concurrently, in discovery order.
+    private nonisolated static func fetchClaude(
+        _ fetchers: [(account: ClaudeAccount, provider: ClaudeProvider)],
+        anyAccountSignedIn: Bool
+    ) async -> [(id: String, result: Result<Provider, Error>)] {
+        await withTaskGroup(of: (index: Int, id: String, result: Result<Provider, Error>).self) { group in
+            for (index, fetcher) in fetchers.enumerated() {
+                group.addTask {
+                    let policy = ClaudeWebProvider.cookiePolicy(for: fetcher.account, anyAccountSignedIn: anyAccountSignedIn)
+                    do {
+                        return (index, fetcher.account.providerID, .success(try await fetcher.provider.fetchUsage(cookiePolicy: policy)))
+                    } catch {
+                        return (index, fetcher.account.providerID, .failure(error))
+                    }
+                }
+            }
+            var outcomes: [(index: Int, id: String, result: Result<Provider, Error>)] = []
+            for await outcome in group { outcomes.append(outcome) }
+            return outcomes.sorted { $0.index < $1.index }.map { ($0.id, $0.result) }
+        }
+    }
+
+    /// What this refresh shows for one Claude account. An expired login keeps the last reading
+    /// (it carries forward, marked stale) rather than blanking the card; only with nothing to
+    /// keep does the card say why.
+    static func resolveClaudeResult(_ result: Result<Provider, Error>, previous: Provider?) -> Provider? {
+        switch result {
+        case .success(let provider):
+            return provider
+        case .failure(let expired as ClaudeProvider.LoginExpired):
+            if let previous, !previous.items.isEmpty { return nil }
+            return expired.fallback
+        case .failure:
+            return nil  // transient, as for every provider
+        }
+    }
+
+    /// Puts the shared cost and insights on one Claude card — the first account, in discovery
+    /// order, whose card has rows — and clears them from the rest.
+    static func attachingClaudeInsights(_ insights: ClaudeInsights?, to providers: [Provider],
+                                        accounts: [ClaudeAccount]) -> [Provider] {
+        let owner = accounts.first { account in
+            providers.contains { $0.id == account.providerID && !$0.items.isEmpty }
+        }?.providerID
+        return providers.map { provider in
+            guard isClaudeProviderID(provider.id) else { return provider }
+            var card = provider
+            card.insights = provider.id == owner ? insights : nil
+            card.costEstimate = provider.id == owner ? insights?.monthlyCost : nil
+            return card
+        }
+    }
+
+    /// Adds each new Claude account right after the last Claude entry in the order, switched
+    /// on. Existing entries, and everything else in the config, are left as they are.
+    static func addingClaudeAccounts(_ ids: [String], to config: AppConfig) -> AppConfig {
+        var config = config
+        for id in ids where !config.providerOrder.contains(id) {
+            let anchor = config.providerOrder.lastIndex(where: isClaudeProviderID)
+            config.providerOrder.insert(id, at: anchor.map { $0 + 1 } ?? 0)
+            if config.enabledProviders[id] == nil { config.enabledProviders[id] = true }
+        }
+        return config
+    }
+
+    /// "Claude" while there is one Claude card; "Claude · <name>" on each once there are more.
+    static func claudeDisplayName(label: String?, override: String?, providerID: String,
+                                  claudeCardCount: Int) -> String {
+        guard claudeCardCount >= 2 else { return "Claude" }
+        if let override = override?.trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
+            return "Claude · \(override)"
+        }
+        return "Claude · \(label ?? providerID)"
+    }
+
+    var claudeAccountCount: Int {
+        providers.filter { isClaudeProviderID($0.id) }.count
+    }
+
+    private func applyingDisplayNames(_ list: [Provider]) -> [Provider] {
+        let count = list.filter { isClaudeProviderID($0.id) }.count
+        return list.map { provider in
+            guard isClaudeProviderID(provider.id) else { return provider }
+            var named = provider
+            named.name = Self.claudeDisplayName(
+                label: provider.accountLabel, override: config.claudeAccountNames?[provider.id],
+                providerID: provider.id, claudeCardCount: count
+            )
+            return named
+        }
+    }
+
+    func renameClaudeAccount(_ providerID: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var names = config.claudeAccountNames ?? [:]
+        names[providerID] = trimmed.isEmpty ? nil : trimmed
+        config.claudeAccountNames = names.isEmpty ? nil : names
+        saveConfig()
+        providers = applyingDisplayNames(providers)
+    }
+
+    /// "as of 9h ago" once a reading is older than two refreshes (at least 15 minutes): the
+    /// rows are what the service last said, not what it says now.
+    static func staleLabel(fetchedAt: Date?, refreshIntervalMinutes: Int, now: Date) -> String? {
+        guard let fetchedAt else { return nil }
+        let age = now.timeIntervalSince(fetchedAt)
+        guard age >= TimeInterval(max(15, 2 * refreshIntervalMinutes) * 60) else { return nil }
+        let minutes = Int(age / 60)
+        if minutes < 60 { return "as of \(minutes)m ago" }
+        if minutes < 48 * 60 { return "as of \(minutes / 60)h ago" }
+        return "as of \(minutes / (24 * 60))d ago"
+    }
+
+    func staleLabel(for provider: Provider) -> String? {
+        Self.staleLabel(fetchedAt: provider.fetchedAt, refreshIntervalMinutes: config.refreshIntervalMinutes, now: Date())
     }
 
     /// Fire a macOS notification when the active Claude chat's context crosses the configured

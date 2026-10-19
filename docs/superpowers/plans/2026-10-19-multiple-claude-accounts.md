@@ -37,8 +37,9 @@
 ## Review Focus
 
 1. **Trailing slash.** A folder exported with a trailing slash (`CLAUDE_CONFIG_DIR=$HOME/.claude-2/`) is still found. Its keychain item is named after the slashed path. Test: Task 1, `trailingSlashVariant`.
-2. **Logged-out folder.** If `~/.claude-2` logs out, its card disappears on the next refresh instead of living on as a 30-day stale card. Test: Task 4, `reconcileDropsUndiscovered`.
-3. **Folder signed in to a different account.** If `~/.claude` signs in to another account, its old cached numbers never show under the new account. Test: Task 4, `reconcileDropsOtherAccount`.
+2. **Logged-out folder.** If `~/.claude-2` logs out, its card disappears on the next refresh, and its cached reading is pruned from disk so it doesn't come back at launch. Tests: Task 2, `isCurrentDropsUndiscovered` and `mergingPrunesStaleAccounts`.
+3. **Folder signed in to a different account.** If `~/.claude` signs in to another account, its old cached numbers never show under the new account, in memory or on disk. Tests: Task 2, `isCurrentDropsOtherAccount` and `mergingPrunesStaleAccounts`.
+6. **Idle first account.** When the first account is idle (login expired) and a second one is active, the shared cost and insights keep updating. They come from local transcripts, not from any account's usage request. Test: Task 4, `insightsSkipDeadCards`.
 4. **Same account in two folders.** One account signed in through two folders shows as one card, not two identical ones. Test: Task 1, `dedupesSameAccount`.
 5. **Upgrading from 1.5.1.** The existing `config.json` decodes, and its pin on `claude` / `Weekly`, its order, and its toggles survive. The new account is inserted right after `claude`. Test: Task 4, `upgradesConfig151`.
 
@@ -126,8 +127,8 @@
 ### Task 2: Stale Claude readings survive and show "reset"
 
 **Files:**
-- Modify: `Sources/UsageTracker/Models.swift`, `Sources/UsageTracker/UsageCache.swift`, and `Sources/UsageTracker/App.swift`, where `carriedForward` lives (around line 452).
-- Test: `Tests/UsageTrackerTests/UsageCacheTests.swift`, `Tests/UsageTrackerTests/ModelsTests.swift`
+- Modify: `Sources/UsageTracker/Models.swift`, `Sources/UsageTracker/UsageCache.swift`, `Sources/UsageTracker/Providers/ClaudeAccount.swift` (for `isCurrent`), and `Sources/UsageTracker/App.swift`, where `carriedForward` lives (around line 452).
+- Test: `Tests/UsageTrackerTests/UsageCacheTests.swift`, `Tests/UsageTrackerTests/ModelsTests.swift`, `Tests/UsageTrackerTests/ClaudeAccountTests.swift`
 
 **Interfaces:**
 - Produces:
@@ -141,6 +142,12 @@
   - `UsageCache.CachedProvider` gains `accountLabel: String?` and `accountUuid: String?`. Both are optional, so cache files written by 1.5.1 still decode.
   - `UsageCache.claudeMaxAge: TimeInterval = 30 * 24 * 60 * 60`.
   - `UsageCache.maxAge(forProviderID:) -> TimeInterval`. Returns `claudeMaxAge` for Claude IDs and `maxAge` otherwise.
+  - `ClaudeAccountDiscovery.isCurrent(providerID: String, accountUuid: String?, accounts: [ClaudeAccount]) -> Bool`, added to `ClaudeAccount.swift`.
+    - Any non-Claude ID → true.
+    - A Claude ID not among `accounts` → false.
+    - Both uuids non-nil and different → false.
+    - Otherwise → true.
+  - `UsageCache.merging(...)` and `UsageCache.save(...)` gain `accounts: [ClaudeAccount]? = nil`. When it's given, stored entries that fail `isCurrent` are dropped, so a logged-out or re-signed-in account's reading is pruned from disk.
 - **The rule:** this applies in `UsageCache.restore`, `UsageCache.merging` (housekeeping), and `AppState.carriedForward`.
   - Each provider ages out at `maxAge(forProviderID:)`.
   - For a Claude ID, an item whose `resetsAt <= now` becomes `item.markedReset()` instead of being dropped.
@@ -163,6 +170,9 @@
 @Test func accountFieldsRoundTrip()           // merging(...) a provider with accountLabel "b@x", accountUuid "U2" → restore → same values
 @MainActor @Test func carriedForwardMarksClaudeReset() // AppState.carriedForward on a claude provider fetched now-30h, item resetsAt now-1h → kept, resetLabel "reset"
 @MainActor @Test func markedResetIsStable()   // carrying an already-reset item again leaves it at 0% / "reset"
+@Test func isCurrentDropsUndiscovered()       // "claude-aaaa1111" with accounts [claude] → false; "codex" → true; "claude" → true
+@Test func isCurrentDropsOtherAccount()       // "claude" uuid U1 vs account U9 → false; U1 vs U1 → true; nil vs U9 → true
+@Test func mergingPrunesStaleAccounts()       // stored "claude-aaaa1111" and "claude"(U1); merging(..., accounts: [claude with U9]) → both gone; stored "codex" kept
 // ModelsTests
 @Test func claudeIDs() { #expect(isClaudeProviderID("claude")); #expect(isClaudeProviderID("claude-2601a85c")); #expect(!isClaudeProviderID("codex")); #expect(!isClaudeProviderID("claudette")) }
 @Test func decodes151Config()                 // config.json literal without claudeAccountNames decodes; claudeAccountNames == nil
@@ -197,8 +207,7 @@
   func fetchUsage(providerID: String, policy: CookiePolicy) async throws -> Provider?
   // ClaudeProvider
   init(account: ClaudeAccount)
-  struct FetchOptions: Sendable { var includeInsights: Bool; var insightsProjectsDirs: [URL]; var cookiePolicy: ClaudeWebProvider.CookiePolicy }
-  func fetchUsage(_ options: FetchOptions) async throws -> Provider
+  func fetchUsage(cookiePolicy: ClaudeWebProvider.CookiePolicy) async throws -> Provider
   struct LoginExpired: Error { let fallback: Provider }
   static func expiredMessage(for account: ClaudeAccount) -> String
   // ClaudeInsightsAnalyzer
@@ -213,7 +222,7 @@
   - `.requireAccount` → fetches `/api/account` first. If the request fails, or the uuid differs, or it's missing → returns nil. Otherwise it fetches only `/organizations/<organizationUuid>/usage` when it has one, and loops over orgs as today when it doesn't.
   - Every returned `Provider` uses `providerID`.
 - **What changes in `ClaudeProvider`:** it uses `account.keychainService` and `account.credentialsFile`. Every `Provider` it builds has `id: account.providerID`, `name: "Claude"`, `accountLabel: account.label`, and `accountUuid: account.accountUuid`.
-  - **Insights:** it runs insights only when `options.includeInsights`, passing `account.projectsDir` plus `insightsProjectsDirs`.
+  - **Insights:** remove the transcript analysis (`insightsAnalyzer`, `insights`, `costEstimate`) from `ClaudeProvider`. Task 4 runs it once in `AppState`, independently of any account's usage request.
   - **Login expired:** in the 401/403 branch, wherever today's code returns `webFallback(or: expiredProvider)` after the retry options run out, it throws `LoginExpired(fallback: expiredProvider)` when the cookie path gives nothing.
   - **Other errors:** they keep today's behavior.
   - **No credentials:** the web provider is tried only under `.unrestricted`.
@@ -270,7 +279,7 @@ EOF
 
 - [ ] **Step 3: Run them and check they fail.** Run `swift test --filter "ClaudeWeb|ClaudeProvider|ClaudeInsightsAnalyzer"`. Expected: a compile failure on `cookiePolicy`, `expiredMessage`, and `additionalProjectsDirs`.
 - [ ] **Step 4: Implement the interfaces above.**
-  - `AppState`, which still constructs `ClaudeProvider()`, will stop compiling here. Give it a temporary build fix: `ClaudeProvider(account: ClaudeAccountDiscovery.discover(home: FileManager.default.homeDirectoryForCurrentUser)[0])`, called with `FetchOptions(includeInsights: true, insightsProjectsDirs: [], cookiePolicy: .unrestricted)`, and catch `LoginExpired` as `e.fallback`. Task 4 replaces it.
+  - `AppState`, which still constructs `ClaudeProvider()`, will stop compiling here. Give it a temporary build fix: `ClaudeProvider(account: ClaudeAccountDiscovery.discover(home: FileManager.default.homeDirectoryForCurrentUser)[0])`, called with `fetchUsage(cookiePolicy: .unrestricted)`, and catch `LoginExpired` as `e.fallback`. Insights stay missing until Task 4, which replaces this fix.
 - [ ] **Step 5: Run the tests and check they pass.** Run `make test`. Expected: all pass.
 - [ ] **Step 6: Commit.** `git commit -m "feat(claude): per-account provider; cookie only fills in for its own account"`
 
@@ -290,7 +299,7 @@ EOF
   static func claudeDisplayName(label: String?, override: String?, providerID: String, claudeCardCount: Int) -> String
   static func staleLabel(fetchedAt: Date?, refreshIntervalMinutes: Int, now: Date) -> String?
   static func resolveClaudeResult(_ result: Result<Provider, Error>, previous: Provider?) -> Provider?
-  static func reconcileClaude(_ providers: [Provider], accounts: [ClaudeAccount]) -> [Provider]
+  static func attachingClaudeInsights(_ insights: ClaudeInsights?, to providers: [Provider], accounts: [ClaudeAccount]) -> [Provider]
   var claudeAccountCount: Int { get }            // providers.filter { isClaudeProviderID($0.id) }.count
   func renameClaudeAccount(_ providerID: String, to name: String)
   func staleLabel(for provider: Provider) -> String?
@@ -307,15 +316,17 @@ EOF
     - `.success(p)` → `p`.
     - `LoginExpired` → nil when `previous` has items (so the reading carries forward), otherwise `e.fallback`.
     - Any other error → nil (transient, as today).
-  - **`reconcileClaude`:** drops a Claude-ID provider whose ID isn't in `accounts`. It also drops one whose `accountUuid` and the account's `accountUuid` are both non-nil and differ. Everything else passes through.
+  - **`attachingClaudeInsights`:** puts `insights` and `costEstimate = insights?.monthlyCost` on one Claude card and clears both on every other Claude card. The card is the first one in `accounts` order that's present in `providers` with items, and none if no card qualifies. Non-Claude providers are untouched.
 - **`refresh()` flow:**
   1. Run `ClaudeAccountDiscovery.discover` off the main actor (it spawns `security`).
   2. Keep `[String: (account: ClaudeAccount, provider: ClaudeProvider)]`, rebuilding an entry when its account value changed.
-  3. Fetch every account concurrently, alongside the other providers. `includeInsights` is true for the first account with `hasLogin`, or for `claude` when none has one. Pass every account's `projectsDir` and `cookiePolicy(for:anyAccountSignedIn:)`.
-  4. Feed the results through `resolveClaudeResult`.
-  5. Apply `reconcileClaude` after carry-forward.
-  6. Apply `addingClaudeAccounts`, saving config only when it changed.
-  7. Apply display names, setting `provider.name` for Claude IDs from `config.claudeAccountNames`. Do this also right after the cache restore in `init`, and in `renameClaudeAccount`.
+  3. Fetch every account concurrently, alongside the other providers, each with `cookiePolicy(for:anyAccountSignedIn:)`.
+  4. In the same concurrent batch, run one `ClaudeInsightsAnalyzer` owned by `AppState` (keep it across refreshes so its file cache stays warm). Call it with `analyze(projectsDir: accounts[0].projectsDir, additionalProjectsDirs: accounts.dropFirst().map(\.projectsDir))`.
+  5. Feed the results through `resolveClaudeResult`.
+  6. After carry-forward, drop providers that fail `ClaudeAccountDiscovery.isCurrent` (from Task 2), then apply `attachingClaudeInsights`. This comes before the existing `showCostEstimate` strip, which keeps working as today.
+  7. Pass `accounts:` to `UsageCache.save`.
+  8. Apply `addingClaudeAccounts`, saving config only when it changed.
+  9. Apply display names, setting `provider.name` for Claude IDs from `config.claudeAccountNames`. Do this also right after the cache restore in `init`, and in `renameClaudeAccount`.
 - **`renameClaudeAccount`:** stores the trimmed name, or removes the entry when it's blank, then saves.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -342,8 +353,8 @@ EOF
     // interval 30: now-40m → nil
 }
 @Test func resolveResults()           // success → provider; LoginExpired + previous with items → nil; + previous without items → fallback; + no previous → fallback; URLError → nil
-@Test func reconcileDropsUndiscovered() // carried "claude-aaaa1111" with accounts [claude] → removed; "codex" untouched
-@Test func reconcileDropsOtherAccount() // carried "claude" accountUuid U1, account uuid U9 → removed; U1 vs U1 → kept; carried nil uuid → kept
+@Test func insightsGoToFirstLiveCard() // accounts [claude, claude-x], both with items → insights + costEstimate on "claude" only; "claude-x" has nil for both
+@Test func insightsSkipDeadCards()     // "claude" notConnected (no items), "claude-x" with items → "claude-x" gets them; nil insights → every Claude card nil; "codex" untouched
 ```
 
 - [ ] **Step 2: Run them and check they fail.** Run `swift test --filter ClaudeAccountsState`. Expected: a compile failure on `addingClaudeAccounts`.

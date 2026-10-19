@@ -342,9 +342,19 @@ actor ClaudeProvider {
         tool: URL = URL(fileURLWithPath: "/usr/bin/security"),
         timeout: TimeInterval = 5
     ) -> Data? {
+        guard let result = runTool(tool, arguments: ["find-generic-password", "-s", service, "-w"], timeout: timeout),
+              result.status == 0 else { return nil }
+        var data = result.output
+        while data.last == UInt8(ascii: "\n") { data.removeLast() }
+        return data.isEmpty ? nil : hexDecodedIfNeeded(data)
+    }
+
+    /// Runs `tool` and returns its exit status and standard output, or nil when it can't be
+    /// launched or doesn't finish within `timeout`.
+    static func runTool(_ tool: URL, arguments: [String], timeout: TimeInterval) -> (status: Int32, output: Data)? {
         let process = Process()
         process.executableURL = tool
-        process.arguments = ["find-generic-password", "-s", service, "-w"]
+        process.arguments = arguments
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -374,11 +384,8 @@ actor ClaudeProvider {
             return nil
         }
         // A child that inherited stdout could hold the pipe open past the tool's exit.
-        guard read.wait(timeout: .now() + 2) == .success,
-              process.terminationStatus == 0 else { return nil }
-        var data = drained.data
-        while data.last == UInt8(ascii: "\n") { data.removeLast() }
-        return data.isEmpty ? nil : hexDecodedIfNeeded(data)
+        guard read.wait(timeout: .now() + 2) == .success else { return nil }
+        return (process.terminationStatus, drained.data)
     }
 
     /// `security -w` prints the password as hex when any byte is non-printable — a newline,

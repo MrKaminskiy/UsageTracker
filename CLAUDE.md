@@ -17,7 +17,7 @@ swift build
 
 ### Providers
 Located in `Sources/UsageTracker/Providers/`. Each provider fetches usage from a service:
-- **ClaudeProvider** - Reads OAuth credentials from macOS Keychain (`Claude Code-credentials`), falling back to `~/.claude/.credentials.json` for newer Claude Code CLI versions; calls `api.anthropic.com/api/oauth/usage`
+- **ClaudeProvider** - One instance per Claude Code account (`ClaudeAccount`, found by `ClaudeAccountDiscovery` in `Providers/ClaudeAccount.swift`: `~/.claude` plus every signed-in `~/.claude*` folder). Reads that folder's OAuth credentials from the Keychain (`Claude Code-credentials`, or `Claude Code-credentials-<hash>` for a custom `CLAUDE_CONFIG_DIR`), falling back to `<folder>/.credentials.json`; calls `api.anthropic.com/api/oauth/usage`. The default account's provider ID is `claude`; others are `claude-<hash>`
 - **CursorProvider** - Reads from Cursor app cache (auto-detected)
 - **CodexProvider** - Reads from `~/.codex/` (auto-detected)
 - **OpenAIProvider** - Uses admin API key (`sk-admin-*`) for org spend, or project key for daily usage
@@ -59,7 +59,7 @@ User config stored in `~/.usagetracker/`:
 
 | Provider | Auth | What it shows | Status |
 |----------|------|---------------|--------|
-| Claude | OAuth (keychain, auto) | Session %, Weekly %, Sonnet % / Opus % (when reported), per-model weekly caps from `limits[]` (e.g. Fable), Code & Cowork / dollar credit buckets, extra credits (with currency), cost estimate, usage insights | Tested |
+| Claude | OAuth (keychain, auto; one card per signed-in config folder) | Session %, Weekly %, Sonnet % / Opus % (when reported), per-model weekly caps from `limits[]` (e.g. Fable), Code & Cowork / dollar credit buckets, extra credits (with currency), cost estimate, usage insights | Tested |
 | Cursor | Local DB (auto) | Usage % | Tested |
 | Codex | `~/.codex/auth.json` (auto) | 5h / weekly % (windows named by length — Pro plans send only a weekly window), separately metered model limits, workspace monthly credit cap, banked limit resets | Tested |
 | OpenAI | API key (`sk-admin-*` or `sk-proj-*`) | Admin: monthly spend; Project: daily requests + tokens | Experimental |
@@ -73,6 +73,8 @@ User config stored in `~/.usagetracker/`:
 - **Read the `Claude Code-credentials` keychain item only through `/usr/bin/security`**, never `SecItemCopyMatching`. Every token refresh Claude Code writes (about every 8h) makes macOS reset the item's partition list to `apple-tool:` alone, evicting any "Always Allow" granted to this app, so a native read popped a keychain-password prompt after each refresh (securityd: `ACL partition mismatch: client teamid:8L59Y7G4M7 ACL ("apple-tool:")`). `/usr/bin/security` is always on that list, so `ClaudeProvider.readGenericPassword` never prompts — not even on first launch or for unsigned debug builds.
 - **Never write to the `Claude Code-credentials` keychain item.** Writing it (`SecItemUpdate`) makes macOS replace the item's *partition list* with the writing app's partition ID (`teamid:8L59Y7G4M7`), evicting `apple-tool:`. Claude Code reads that item by shelling out to `/usr/bin/security` (an apple-tool) several times a minute, so every read then pops a keychain-password prompt — securityd logs `ACL partition mismatch: client apple-tool: ACL ("teamid:...")`. "Always Allow" restores `apple-tool:` only until our next write. There is no public API to preserve the partition list, so `CredentialSource.isWritable` keeps all refresh/write-back paths off the keychain: we read it, and let Claude Code do the refreshing. Only `~/.claude/.credentials.json` is writable.
   Diagnose with (`/usr/bin/log` — a shell function can shadow `log`): `/usr/bin/log show --last 1h --style compact --predicate 'process == "securityd" AND eventMessage CONTAINS "partition mismatch"'`
+- **Claude account IDs come from the folder path.** Claude Code names a custom `CLAUDE_CONFIG_DIR`'s keychain item `Claude Code-credentials-` + the first 8 hex of SHA-256 of the NFC-normalized path, exactly as exported (2.1.303 source: `D1()`). A trailing slash is a different item, so discovery tries the bare path and then `path + "/"`. The same hash is the provider ID (`claude-<hash>`), and it keys pins, order and names in `config.json`.
+- **The claude.ai cookie belongs to one account.** With any Claude Code login present, `ClaudeWebProvider` fills in a card only after `GET claude.ai/api/account` returns that card's `accountUuid`. The org alone isn't enough, since Team seats share one. Python's urllib gets a Cloudflare 403 there; URLSession works.
 - **Runway / Stability**: Providers are implemented but untested. Hidden by default. Enable in Settings at your own risk.
 
 ## Releasing

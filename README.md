@@ -101,6 +101,24 @@ If you only use Claude in the browser or the desktop app, connect it with your c
 
 Limits, extra credits and reset times all work this way. Insights and the cost estimate don't, because they come from Claude Code's local session logs. The cookie expires with your browser session, and UsageTracker tells you when it needs a new one.
 
+When you're also signed in to Claude Code, the cookie only fills in for the account it belongs to, so one account's numbers never show on another account's card.
+
+### Two Claude accounts
+
+Give each subscription its own Claude Code config folder, and both stay signed in at once. UsageTracker finds every signed-in `~/.claude*` folder and shows each account as its own card, with its own detail page and Settings page.
+
+```bash
+mkdir ~/.claude-2
+# Share your rules, settings, plugins, skills and memory with the second folder
+for f in CLAUDE.md settings.json agents hooks plugins skills projects; do ln -s ~/.claude/$f ~/.claude-2/$f; done
+echo "alias claude2='CLAUDE_CONFIG_DIR=\$HOME/.claude-2 claude'" >> ~/.zshrc && source ~/.zshrc
+claude2   # then run /login with the second account
+```
+
+- **Card names.** With two or more accounts, cards are titled `Claude · <email>`. Rename an account in **Settings → its Claude page → Name**.
+- **Idle accounts.** An account you haven't used in Claude Code for a while keeps showing its last numbers, marked `as of 9h ago`. Limits that have reset since show `reset`. UsageTracker never refreshes Claude Code's login itself, so the numbers update the next time you run Claude Code with that account.
+- **Shared stats.** The cost estimate and insights come from local session logs, which don't record the account, so they appear once, labeled `all accounts`.
+
 ## Tips
 
 - **Left-click** the ring for the popover. **Right-click** it for Settings, Clear Cache and Quit.

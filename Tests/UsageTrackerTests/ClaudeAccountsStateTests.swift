@@ -59,11 +59,12 @@ struct ClaudeAccountsStateTests {
 
     @Test("One account is plain Claude; with two, each card is named, a user's name winning")
     func displayNames() {
-        #expect(AppState.claudeDisplayName(label: "a@x", override: nil, providerID: "claude", claudeCardCount: 1) == "Claude")
-        #expect(AppState.claudeDisplayName(label: "a@x", override: nil, providerID: "claude", claudeCardCount: 2) == "Claude · a@x")
-        #expect(AppState.claudeDisplayName(label: "a@x", override: "Work", providerID: "claude", claudeCardCount: 2) == "Claude · Work")
-        #expect(AppState.claudeDisplayName(label: "a@x", override: "  ", providerID: "claude", claudeCardCount: 2) == "Claude · a@x")
-        #expect(AppState.claudeDisplayName(label: nil, override: nil, providerID: "claude-2601a85c", claudeCardCount: 2) == "Claude · claude-2601a85c")
+        #expect(AppState.claudeDisplayName(label: "a@x", override: nil, claudeCardCount: 1) == "Claude")
+        #expect(AppState.claudeDisplayName(label: "a@x", override: nil, claudeCardCount: 2) == "Claude · a@x")
+        #expect(AppState.claudeDisplayName(label: "a@x", override: "Work", claudeCardCount: 2) == "Claude · Work")
+        #expect(AppState.claudeDisplayName(label: "a@x", override: "  ", claudeCardCount: 2) == "Claude · a@x")
+        // No label yet (a reading cached without one): plain, never an internal ID.
+        #expect(AppState.claudeDisplayName(label: nil, override: nil, claudeCardCount: 2) == "Claude")
     }
 
     @Test("A reading is marked stale once it's older than two refreshes, at least 15 minutes")
@@ -77,6 +78,26 @@ struct ClaudeAccountsStateTests {
         #expect(label(3 * 86400) == "as of 3d ago")
         #expect(label(40 * 60, interval: 30) == nil)
         #expect(AppState.staleLabel(fetchedAt: nil, refreshIntervalMinutes: 5, now: now) == nil)
+    }
+
+    @Test("A kept reading with no account label gets its folder's label; nothing else changes")
+    func labelsUnlabeledCards() {
+        var unlabeled = provider("claude")
+        unlabeled.accountUuid = nil
+        var labeled = provider("claude-2601a85c")
+        labeled.accountLabel = "kept@x"
+        let codex = Provider(id: "codex", name: "Codex", icon: "terminal", items: [], status: .loaded)
+        var first = account("claude", uuid: "U1")
+        first.email = "a@x"
+        var second = account("claude-2601a85c", uuid: "U2")
+        second.email = "b@x"
+
+        let out = AppState.labelingClaudeCards([unlabeled, labeled, codex], accounts: [first, second])
+
+        #expect(out[0].accountLabel == "a@x")
+        #expect(out[0].accountUuid == nil)  // a label is cosmetic; the uuid check must still see "unknown"
+        #expect(out[1].accountLabel == "kept@x")
+        #expect(out[2].accountLabel == nil)
     }
 
     // MARK: Fetch results

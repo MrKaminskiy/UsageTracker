@@ -243,6 +243,7 @@ class AppState: ObservableObject {
         newProviders.removeAll {
             !ClaudeAccountDiscovery.isCurrent(providerID: $0.id, accountUuid: $0.accountUuid, accounts: accounts)
         }
+        newProviders = Self.labelingClaudeCards(newProviders, accounts: accounts)
         newProviders = Self.attachingClaudeInsights(await claudeInsights, to: newProviders, accounts: accounts)
 
         // New accounts join the order right after Claude, switched on, before anything below
@@ -368,13 +369,26 @@ class AppState: ObservableObject {
     }
 
     /// "Claude" while there is one Claude card; "Claude · <name>" on each once there are more.
-    static func claudeDisplayName(label: String?, override: String?, providerID: String,
-                                  claudeCardCount: Int) -> String {
+    /// A card with no name or label yet stays plain "Claude" rather than showing an internal ID.
+    static func claudeDisplayName(label: String?, override: String?, claudeCardCount: Int) -> String {
         guard claudeCardCount >= 2 else { return "Claude" }
         if let override = override?.trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
             return "Claude · \(override)"
         }
-        return "Claude · \(label ?? providerID)"
+        return label.map { "Claude · \($0)" } ?? "Claude"
+    }
+
+    /// Gives a kept Claude reading that has no account label (one cached by an older build) its
+    /// folder's label. Only the label: the uuid stays unknown, so `isCurrent` can't be fooled
+    /// into vouching for a reading that may belong to the folder's previous account.
+    static func labelingClaudeCards(_ providers: [Provider], accounts: [ClaudeAccount]) -> [Provider] {
+        providers.map { provider in
+            guard provider.accountLabel == nil,
+                  let account = accounts.first(where: { $0.providerID == provider.id }) else { return provider }
+            var labeled = provider
+            labeled.accountLabel = account.label
+            return labeled
+        }
     }
 
     var claudeAccountCount: Int {
@@ -388,7 +402,7 @@ class AppState: ObservableObject {
             var named = provider
             named.name = Self.claudeDisplayName(
                 label: provider.accountLabel, override: config.claudeAccountNames?[provider.id],
-                providerID: provider.id, claudeCardCount: count
+                claudeCardCount: count
             )
             return named
         }

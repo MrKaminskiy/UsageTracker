@@ -78,7 +78,7 @@ enum SettingsPage: Hashable, Identifiable {
         case .display: return "Display"
         case .howItWorks: return "How It Works"
         case .about: return "About"
-        case .provider(let id): return ProviderCatalog.all[id]?.name ?? id
+        case .provider(let id): return ProviderCatalog.info(for: id)?.name ?? id
         }
     }
 
@@ -88,7 +88,7 @@ enum SettingsPage: Hashable, Identifiable {
         case .display: return "menubar.rectangle"
         case .howItWorks: return "questionmark"
         case .about: return "info"
-        case .provider(let id): return ProviderCatalog.all[id]?.icon ?? "circle"
+        case .provider(let id): return ProviderCatalog.info(for: id)?.icon ?? "circle"
         }
     }
 
@@ -101,7 +101,7 @@ enum SettingsPage: Hashable, Identifiable {
         case .about: return ["version", "update", "github", "issue", "license", "quit"]
         case .provider(let id):
             // "API Key" or "Browser Cookie", only for providers that take one.
-            return ["limits", "usage"] + (ProviderCatalog.all[id]?.key.map { [$0.title] } ?? [])
+            return ["limits", "usage"] + (ProviderCatalog.info(for: id)?.key.map { [$0.title] } ?? [])
         }
     }
 

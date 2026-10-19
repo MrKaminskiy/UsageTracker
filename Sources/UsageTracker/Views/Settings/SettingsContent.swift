@@ -17,13 +17,22 @@ struct SettingsContent: View {
 
     private var currentPage: SettingsPage {
         let page = SettingsPage(rawValue: selectedRaw) ?? .general
-        if case .provider(let id) = page, ProviderCatalog.all[id] == nil { return .general }
+        if case .provider(let id) = page, !providerIDs.contains(id) { return .general }
         return page
     }
 
     /// Providers in the user's popover order, limited to ones Settings knows how to configure.
+    /// A second Claude account is listed only while its folder is signed in.
     private var providerIDs: [String] {
-        appState.config.providerOrder.filter { ProviderCatalog.all[$0] != nil }
+        appState.config.providerOrder.filter { id in
+            guard ProviderCatalog.info(for: id) != nil else { return false }
+            return id == "claude" || !isClaudeProviderID(id) || appState.providers.contains { $0.id == id }
+        }
+    }
+
+    /// Claude accounts' pages carry the card's live name ("Claude · b@x").
+    private func info(for id: String) -> ProviderSettingsInfo? {
+        ProviderCatalog.info(for: id, liveName: appState.providers.first { $0.id == id }?.name)
     }
 
     var body: some View {
@@ -71,7 +80,7 @@ struct SettingsContent: View {
 
     @ViewBuilder
     private func providerRow(_ id: String) -> some View {
-        if let info = ProviderCatalog.all[id] {
+        if let info = info(for: id) {
             SidebarRow(title: info.name, tile: IconTile(symbol: info.icon, tint: info.tint)) {
                 ProviderSidebarBadge(
                     provider: appState.providers.first { $0.id == id },
@@ -94,7 +103,7 @@ struct SettingsContent: View {
             }
         case .about: AboutPage(appState: appState)
         case .provider(let id):
-            if let info = ProviderCatalog.all[id] {
+            if let info = info(for: id) {
                 ProviderPage(info: info, appState: appState)
             }
         }
@@ -106,7 +115,8 @@ struct SettingsContent: View {
         var visible = providerIDs
         visible.move(fromOffsets: source, toOffset: destination)
         var order = appState.config.providerOrder
-        let slots = order.indices.filter { ProviderCatalog.all[order[$0]] != nil }
+        let listed = Set(providerIDs)
+        let slots = order.indices.filter { listed.contains(order[$0]) }
         for (slot, id) in zip(slots, visible) {
             order[slot] = id
         }

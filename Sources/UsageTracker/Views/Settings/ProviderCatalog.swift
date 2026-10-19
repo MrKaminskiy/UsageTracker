@@ -29,6 +29,20 @@ struct ProviderSettingsInfo: Identifiable, Sendable {
 }
 
 enum ProviderCatalog {
+    /// A provider's Settings entry. Every Claude account shares the `claude` entry under its own
+    /// ID and live name; only the default account keeps the browser cookie field, since the one
+    /// cookie belongs to at most one account.
+    static func info(for id: String, liveName: String? = nil) -> ProviderSettingsInfo? {
+        guard isClaudeProviderID(id) else { return all[id] }
+        guard let claude = all["claude"] else { return nil }
+        let isDefault = id == "claude"
+        return ProviderSettingsInfo(
+            id: id, name: liveName ?? claude.name, icon: claude.icon, tint: claude.tint,
+            connection: isDefault ? claude.connection : "Claude Code sign-in",
+            dashboardURL: claude.dashboardURL, key: isDefault ? claude.key : nil
+        )
+    }
+
     static let all: [String: ProviderSettingsInfo] = Dictionary(uniqueKeysWithValues: [
         ProviderSettingsInfo(
             id: "claude", name: "Claude", icon: "brain", tint: Color(red: 0.85, green: 0.47, blue: 0.34),

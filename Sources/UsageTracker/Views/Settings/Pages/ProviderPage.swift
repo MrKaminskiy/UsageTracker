@@ -8,6 +8,8 @@ struct ProviderPage: View {
 
     @State private var key: String
     @State private var saved: Bool
+    @State private var accountName: String
+    @FocusState private var nameFocused: Bool
 
     /// Reads the stored key up front: assigning it after the field appears would look like an
     /// edit, clearing "Saved" and firing a validation request on every visit.
@@ -17,6 +19,7 @@ struct ProviderPage: View {
         let stored = info.key.flatMap { ProviderCatalog.loadKey($0.fileName) } ?? ""
         _key = State(initialValue: stored)
         _saved = State(initialValue: !stored.isEmpty)
+        _accountName = State(initialValue: appState.config.claudeAccountNames?[info.id] ?? "")
     }
 
     private var live: Provider? {
@@ -61,6 +64,20 @@ struct ProviderPage: View {
                     ))
                     .labelsHidden()
                     .help("Show \(info.name) in the popover and menu bar")
+                }
+            }
+
+            if isClaudeProviderID(info.id) && appState.claudeAccountCount >= 2 {
+                Section {
+                    TextField("Name", text: $accountName, prompt: Text(live?.accountLabel ?? ""))
+                        .focused($nameFocused)
+                        .onSubmit { appState.renameClaudeAccount(info.id, to: accountName) }
+                        .onChange(of: nameFocused) { _, focused in
+                            if !focused { appState.renameClaudeAccount(info.id, to: accountName) }
+                        }
+                } footer: {
+                    Text("Shown on this account's card. Leave empty to use the account's email.")
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -160,6 +177,9 @@ struct ProviderPage: View {
         let signedOut: Bool
         if case .notConnected = live?.status { signedOut = true } else { signedOut = live == nil }
         if signedOut {
+            if isClaudeProviderID(info.id) && info.id != "claude" {
+                return "Sign in to Claude Code with this account's config folder."
+            }
             switch info.id {
             case "claude": return "Sign in to Claude Code, or paste a claude.ai cookie below."
             case "codex": return "Run `codex login` in Terminal."

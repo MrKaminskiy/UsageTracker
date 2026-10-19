@@ -194,3 +194,28 @@ struct AppStateTransientFailureTests {
         #expect(n == 0)
     }
 }
+
+@Suite("ProviderCatalog info")
+struct ProviderCatalogInfoTests {
+
+    @Test("A second Claude account gets its own page: its ID and name, no cookie field")
+    func extraClaudeInfo() throws {
+        let info = try #require(ProviderCatalog.info(for: "claude-2601a85c", liveName: "Claude · b@x"))
+        #expect(info.id == "claude-2601a85c")
+        #expect(info.name == "Claude · b@x")
+        #expect(info.key == nil)
+        #expect(info.icon == "brain")
+    }
+
+    @Test("The default Claude page keeps the browser cookie field")
+    func defaultClaudeKeepsCookie() {
+        #expect(ProviderCatalog.info(for: "claude")?.key?.fileName == "claude-web")
+        #expect(ProviderCatalog.info(for: "claude", liveName: "Claude · a@x")?.name == "Claude · a@x")
+    }
+
+    @Test("Other providers come from the static catalog; unknown IDs have no page")
+    func unknownIDIsNil() {
+        #expect(ProviderCatalog.info(for: "nope") == nil)
+        #expect(ProviderCatalog.info(for: "codex")?.name == "Codex")
+    }
+}

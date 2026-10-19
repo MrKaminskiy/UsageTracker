@@ -28,8 +28,9 @@ enum ClaudeAccountDiscovery {
     private static let baseService = "Claude Code-credentials"
 
     /// Claude Code's keychain item for a config folder. A custom `CLAUDE_CONFIG_DIR` gets the
-    /// first 8 hex characters of the SHA-256 of its path, hashed exactly as given — so a
-    /// trailing slash names a different item. `nil` is the default folder.
+    /// first 8 hex characters of the SHA-256 of its path, NFC-normalized but otherwise hashed
+    /// exactly as given — so a trailing slash names a different item. `nil` is the default
+    /// folder.
     static func keychainService(forConfigDir path: String?) -> String {
         guard let path else { return baseService }
         return "\(baseService)-\(pathHash(path))"
@@ -41,7 +42,7 @@ enum ClaudeAccountDiscovery {
     }
 
     private static func pathHash(_ path: String) -> String {
-        SHA256.hash(data: Data(path.utf8))
+        SHA256.hash(data: Data(path.precomposedStringWithCanonicalMapping.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
             .prefix(8)
@@ -84,7 +85,10 @@ enum ClaudeAccountDiscovery {
                 fileManager: fileManager
             )
             guard account.hasLogin else { continue }
-            if let uuid = account.accountUuid, accounts.contains(where: { $0.accountUuid == uuid }) { continue }
+            // Only a signed-in entry claims its account: `.claude.json` can keep naming the
+            // account after a logout.
+            if let uuid = account.accountUuid,
+               accounts.contains(where: { $0.hasLogin && $0.accountUuid == uuid }) { continue }
             accounts.append(account)
         }
         return accounts

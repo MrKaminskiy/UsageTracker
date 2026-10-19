@@ -19,6 +19,14 @@ struct ClaudeAccountNamingTests {
         #expect(ClaudeAccountDiscovery.providerID(forConfigDir: "/Users/test/.claude-2") == "claude-2601a85c")
         #expect(ClaudeAccountDiscovery.providerID(forConfigDir: nil) == "claude")
     }
+
+    // Claude Code normalizes the folder path to NFC before hashing; a path the file system hands
+    // back decomposed must still name the same item.
+    @Test("Paths are NFC-normalized before hashing, as Claude Code does")
+    func normalizesToNFC() {
+        let decomposed = "/Users/test/.claude-a\u{0308}"
+        #expect(ClaudeAccountDiscovery.keychainService(forConfigDir: decomposed) == "Claude Code-credentials-865e5484")
+    }
 }
 
 @Suite("Claude account discovery")
@@ -131,6 +139,21 @@ struct ClaudeAccountDiscoveryTests {
         try writeAccount(to: home.appendingPathComponent(".claude.json"), email: "b@x", uuid: "U2")
         let withDefault = ClaudeAccountDiscovery.discover(home: home, itemExists: { _ in true })
         #expect(withDefault.map(\.providerID) == ["claude"])
+    }
+
+    // After a logout `~/.claude.json` can still name the account; that must not hide the same
+    // account signed in through another folder.
+    @Test("A signed-out default doesn't hide the same account signed in elsewhere")
+    func signedOutDefaultDoesNotDedupe() throws {
+        let home = try makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try writeAccount(to: home.appendingPathComponent(".claude.json"), email: "b@x", uuid: "U2")
+        let second = try folder(".claude-2", in: home)
+        try writeAccount(to: second.appendingPathComponent(".claude.json"), email: "b@x", uuid: "U2")
+
+        let accounts = ClaudeAccountDiscovery.discover(home: home, itemExists: { $0 == service(second) })
+
+        #expect(accounts.map(\.providerID) == ["claude", ClaudeAccountDiscovery.providerID(forConfigDir: second.path)])
     }
 
     @Test("Leftover keychain items with no folder are not accounts")

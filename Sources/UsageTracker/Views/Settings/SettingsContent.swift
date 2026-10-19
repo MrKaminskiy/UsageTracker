@@ -22,11 +22,16 @@ struct SettingsContent: View {
     }
 
     /// Providers in the user's popover order, limited to ones Settings knows how to configure.
-    /// A second Claude account is listed only while its folder is signed in.
     private var providerIDs: [String] {
-        appState.config.providerOrder.filter { id in
+        Self.listedProviderIDs(order: appState.config.providerOrder, discoveredClaudeIDs: appState.claudeAccountIDs)
+    }
+
+    /// A second Claude account is listed while its folder is signed in — whether or not a
+    /// reading has arrived yet, so its toggle is there even when the first fetch failed.
+    nonisolated static func listedProviderIDs(order: [String], discoveredClaudeIDs: Set<String>) -> [String] {
+        order.filter { id in
             guard ProviderCatalog.info(for: id) != nil else { return false }
-            return id == "claude" || !isClaudeProviderID(id) || appState.providers.contains { $0.id == id }
+            return id == "claude" || !isClaudeProviderID(id) || discoveredClaudeIDs.contains(id)
         }
     }
 

@@ -71,6 +71,8 @@ class AppState: ObservableObject {
     /// Enabled providers that failed transiently this refresh (rate-limited/offline) with no
     /// data to fall back on. Drives an honest empty state instead of a misleading "sign in".
     @Published var transientFailureCount: Int = 0
+    /// Provider IDs of the Claude accounts the last refresh found signed in (plus the default).
+    @Published private(set) var claudeAccountIDs: Set<String> = ["claude"]
 
     let updateChecker = UpdateChecker()
 
@@ -165,6 +167,7 @@ class AppState: ObservableObject {
         // Discovery spawns `security` once per config folder; keep it off the main actor.
         let home = FileManager.default.homeDirectoryForCurrentUser
         let accounts = await Task.detached { ClaudeAccountDiscovery.discover(home: home) }.value
+        claudeAccountIDs = Set(accounts.map(\.providerID))
         let fetchers = claudeFetchers(for: accounts)
         let anyAccountSignedIn = accounts.contains { $0.hasLogin }
         async let claudeOutcomes = Self.fetchClaude(fetchers, anyAccountSignedIn: anyAccountSignedIn)

@@ -219,3 +219,18 @@ struct ProviderCatalogInfoTests {
         #expect(ProviderCatalog.info(for: "codex")?.name == "Codex")
     }
 }
+
+@Suite("Settings sidebar provider list")
+struct SettingsSidebarListTests {
+
+    @Test("A signed-in Claude account is listed even before its first reading arrives")
+    func listsDiscoveredAccounts() {
+        let order = ["claude", "claude-2601a85c", "cursor", "nope"]
+        #expect(SettingsContent.listedProviderIDs(order: order, discoveredClaudeIDs: ["claude", "claude-2601a85c"])
+                == ["claude", "claude-2601a85c", "cursor"])
+        #expect(SettingsContent.listedProviderIDs(order: order, discoveredClaudeIDs: ["claude"])
+                == ["claude", "cursor"])
+        #expect(SettingsContent.listedProviderIDs(order: order, discoveredClaudeIDs: [])
+                == ["claude", "cursor"])
+    }
+}

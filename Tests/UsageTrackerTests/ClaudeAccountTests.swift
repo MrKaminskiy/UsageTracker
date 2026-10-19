@@ -94,17 +94,33 @@ struct ClaudeAccountDiscoveryTests {
         #expect(accounts.first?.hasLogin == false)
     }
 
-    @Test("A .credentials.json file counts as a login")
+    @Test("A .credentials.json file counts as a login when the folder names its account")
     func credentialsFileIsALogin() throws {
         let home = try makeHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let third = try folder(".claude-3", in: home)
         try Data("{}".utf8).write(to: third.appendingPathComponent(".credentials.json"))
+        try writeAccount(to: third.appendingPathComponent(".claude.json"), email: "c@x", uuid: "U3")
 
         let accounts = ClaudeAccountDiscovery.discover(home: home, itemExists: { _ in false })
 
         #expect(accounts.map(\.providerID) == ["claude", ClaudeAccountDiscovery.providerID(forConfigDir: third.path)])
         #expect(accounts.last?.hasLogin == true)
+    }
+
+    // `cp -R ~/.claude ~/.claude-backup` copies the token file but not `~/.claude.json`, which
+    // lives outside the folder. Treating it as an account would poll one account twice and,
+    // worse, refresh the copied token — rotating the refresh token the live login still holds.
+    @Test("A copied folder with only a token file isn't an account")
+    func credentialsFileWithoutAccountIgnored() throws {
+        let home = try makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let backup = try folder(".claude-backup", in: home)
+        try Data("{}".utf8).write(to: backup.appendingPathComponent(".credentials.json"))
+
+        let accounts = ClaudeAccountDiscovery.discover(home: home, itemExists: { _ in false })
+
+        #expect(accounts.map(\.providerID) == ["claude"])
     }
 
     @Test("A folder exported with a trailing slash is found under the slashed item name")

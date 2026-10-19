@@ -65,6 +65,7 @@ enum ClaudeAccountDiscovery {
             keychainService: baseService,
             infoFile: home.appendingPathComponent(".claude.json"),
             hasKeychainItem: itemExists(baseService),
+            fileLoginNeedsAccount: false,
             fileManager: fileManager
         )]
 
@@ -82,6 +83,7 @@ enum ClaudeAccountDiscovery {
                 keychainService: found ?? candidates[0],
                 infoFile: dir.appendingPathComponent(".claude.json"),
                 hasKeychainItem: found != nil,
+                fileLoginNeedsAccount: true,
                 fileManager: fileManager
             )
             guard account.hasLogin else { continue }
@@ -100,10 +102,17 @@ enum ClaudeAccountDiscovery {
         keychainService: String,
         infoFile: URL,
         hasKeychainItem: Bool,
+        fileLoginNeedsAccount: Bool,
         fileManager: FileManager
     ) -> ClaudeAccount {
         let credentialsFile = configDir.appendingPathComponent(".credentials.json")
         let info = oauthAccount(in: infoFile)
+        // A keychain item named after this exact path is proof Claude Code signed in through it.
+        // A token file alone isn't, for a custom folder: `cp -R ~/.claude ~/.claude-backup`
+        // copies it but not `~/.claude.json`, and refreshing that copy would rotate the refresh
+        // token the live login still holds. Claude Code writes `<folder>/.claude.json` on login.
+        let hasFileLogin = fileManager.fileExists(atPath: credentialsFile.path)
+            && (!fileLoginNeedsAccount || info?["accountUuid"] is String)
         return ClaudeAccount(
             providerID: providerID,
             configDir: configDir,
@@ -113,7 +122,7 @@ enum ClaudeAccountDiscovery {
             email: info?["emailAddress"] as? String,
             accountUuid: info?["accountUuid"] as? String,
             organizationUuid: info?["organizationUuid"] as? String,
-            hasLogin: hasKeychainItem || fileManager.fileExists(atPath: credentialsFile.path)
+            hasLogin: hasKeychainItem || hasFileLogin
         )
     }
 

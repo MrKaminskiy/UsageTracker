@@ -80,7 +80,7 @@ struct MenuBarView: View {
 
     private enum Screen: Equatable {
         case list
-        case claudeDetail
+        case claudeDetail(String)  // the Claude account's provider ID
         case codexDetail
     }
 
@@ -93,8 +93,8 @@ struct MenuBarView: View {
             case .list:
                 listScreen
                     .transition(.move(edge: .leading).combined(with: .opacity))
-            case .claudeDetail:
-                ClaudeDetailView(appState: appState) {
+            case .claudeDetail(let providerID):
+                ClaudeDetailView(appState: appState, providerID: providerID) {
                     withAnimation(.easeInOut(duration: 0.2)) { screen = .list }
                 }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -198,7 +198,9 @@ struct MenuBarView: View {
                         onTogglePin: { itemLabel in
                             appState.togglePin(providerId: provider.id, itemLabel: itemLabel)
                         },
-                        onOpenDetail: detailAction(for: provider.id)
+                        onOpenDetail: detailAction(for: provider.id),
+                        staleLabel: appState.staleLabel(for: provider),
+                        costLabel: appState.claudeAccountCount >= 2 ? "Est. API cost, all accounts" : "Est. API cost this month"
                     )
                 }
             }
@@ -206,9 +208,10 @@ struct MenuBarView: View {
     }
 
     private func detailAction(for providerID: String) -> (() -> Void)? {
+        if isClaudeProviderID(providerID) {
+            return { withAnimation(.easeInOut(duration: 0.2)) { screen = .claudeDetail(providerID) } }
+        }
         switch providerID {
-        case "claude":
-            return { withAnimation(.easeInOut(duration: 0.2)) { screen = .claudeDetail } }
         case "codex":
             return { withAnimation(.easeInOut(duration: 0.2)) { screen = .codexDetail } }
         default:

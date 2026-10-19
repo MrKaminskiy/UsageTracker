@@ -17,6 +17,15 @@ enum ClaudeDetailFormat {
         return "resets \(formatter.string(from: date))"
     }
 
+    /// The line under a limit bar: when a running window resets, the row's own text otherwise —
+    /// including "reset" for a window that elapsed since an idle account's last reading.
+    static func resetText(for item: UsageItem, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        if let resetsAt = item.resetsAt, resetsAt > now {
+            return absoluteResetLabel(for: resetsAt, now: now, calendar: calendar)
+        }
+        return item.resetLabel
+    }
+
     /// 123 → "123", 45600 → "46k", 1200000 → "1.2M"
     static func tokenCount(_ count: Int) -> String {
         switch count {
@@ -36,10 +45,16 @@ enum ClaudeDetailFormat {
 
 struct ClaudeDetailView: View {
     @ObservedObject var appState: AppState
+    let providerID: String
     var onBack: () -> Void
 
     private var provider: Provider? {
-        appState.providers.first { $0.id == "claude" }
+        appState.providers.first { $0.id == providerID }
+    }
+
+    /// Transcript stats cover every account on this Mac; say so once there is more than one.
+    private var sharedSuffix: String {
+        appState.claudeAccountCount >= 2 ? ", all accounts" : ""
     }
 
     var body: some View {
@@ -100,8 +115,10 @@ struct ClaudeDetailView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
 
-            Text("Claude")
+            Text(provider?.name ?? "Claude")
                 .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
 
             Spacer()
 
@@ -126,14 +143,8 @@ struct ClaudeDetailView: View {
                             .frame(width: 36, alignment: .trailing)
                     }
 
-                    if let resetsAt = item.resetsAt {
-                        Text(ClaudeDetailFormat.absoluteResetLabel(for: resetsAt))
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                            .monospacedDigit()
-                            .padding(.leading, 96)
-                    } else if let detail = item.resetLabel {
-                        // Non-time trailing detail (e.g. extra credits "16.10/50")
+                    // A reset time, or non-time trailing detail (e.g. extra credits "16.10/50")
+                    if let detail = ClaudeDetailFormat.resetText(for: item) {
                         Text(detail)
                             .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
@@ -147,7 +158,7 @@ struct ClaudeDetailView: View {
 
     private func insightsSection(_ insights: ClaudeInsights) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            DetailSectionHeader(title: "Last 24 hours on this Mac")
+            DetailSectionHeader(title: "Last 24 hours on this Mac\(sharedSuffix)")
                 .help("Approximate, from local Claude Code sessions on this Mac.")
 
             if let avg = insights.avgContextTokens {
@@ -301,7 +312,7 @@ struct ClaudeDetailView: View {
 
     private func todaySection(_ today: TodayStats) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            DetailSectionHeader(title: "Today")
+            DetailSectionHeader(title: "Today\(sharedSuffix)")
             HStack(alignment: .top, spacing: 8) {
                 if appState.config.showCostEstimate {
                     StatCell(value: ClaudeProvider.formatDollars(today.cost.rounded(toPlaces: 2)), label: "est. cost")

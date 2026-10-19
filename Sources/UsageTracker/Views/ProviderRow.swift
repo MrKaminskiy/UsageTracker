@@ -8,6 +8,9 @@ struct ProviderRow: View {
     var isPinned: (String) -> Bool = { _ in false }
     var onTogglePin: ((String) -> Void)? = nil
     var onOpenDetail: (() -> Void)? = nil
+    /// "as of 9h ago" when the rows are an old reading kept on screen.
+    var staleLabel: String? = nil
+    var costLabel: String = "Est. API cost this month"
     @State private var isCardHovered = false
 
     private var displayedItems: [UsageItem] {
@@ -57,7 +60,7 @@ struct ProviderRow: View {
                             .padding(.trailing, 6)
 
                         HStack(spacing: 8) {
-                            Text("Est. API cost this month")
+                            Text(costLabel)
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
 
@@ -114,7 +117,16 @@ struct ProviderRow: View {
 
                     Text(provider.name)
                         .font(.system(size: 13, weight: .semibold))
-                        .fixedSize()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    if let staleLabel {
+                        Text(staleLabel)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                            .fixedSize()
+                            .help("Numbers from the last successful check. They update on the next successful refresh.")
+                    }
 
                     if provider.insights?.hasWarnings == true {
                         Image(systemName: "exclamationmark.triangle.fill")
